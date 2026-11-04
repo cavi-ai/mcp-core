@@ -1,0 +1,169 @@
+import asyncio
+import unittest
+from importlib.metadata import version
+
+from mcp import Client
+from mcp.server.mcpserver.exceptions import ToolError
+
+from cavi_mcp_core.contracts import OperationRejected, Result, failure
+from cavi_mcp_core.server import (
+    DESTRUCTIVE,
+    READ_ONLY,
+    WRITES,
+    Server,
+    need,
+    reject_foreign,
+)
+
+
+class Echo(Result):
+    text: str
+    note: str | None = None
+
+
+def build(**kwargs):
+    mcp = Server("demo", package="cavi-mcp-core", **kwargs)
+
+    @mcp.tool(annotations=READ_ONLY)
+    async def echo(text: str, note: str | None = None) -> Echo:
+        """Echo text."""
+        if text == "bad":
+            raise ValueError("text must not be bad")
+        if text == "busy":
+            raise RuntimeError("application is busy")
+        if text == "locked":
+            raise OperationRejected("project is locked", "PROJECT_LOCKED")
+        if text == "defect":
+            raise TypeError("internal detail")
+        return Echo(text=text)
+
+    return mcp, echo
+
+
+async def session_call(mcp, name, arguments):
+    async with Client(mcp) as client:
+        return await client.call_tool(name, arguments)
+
+
+async def session_tools(mcp):
+    async with Client(mcp) as client:
+        return (await client.list_tools()).tools
+
+
+def call(mcp, name, arguments):
+    return asyncio.run(session_call(mcp, name, arguments))
+
+
+class ServerTests(unittest.TestCase):
+    def test_reports_the_package_version(self):
+        mcp, _ = build()
+        self.assertEqual(mcp.version, version("cavi-mcp-core"))
+        self.assertEqual(Server("demo", version="9.9.9").version, "9.9.9")
+
+    def test_success_returns_only_the_fields_the_tool_set(self):
+        mcp, _ = build()
+        result = call(mcp, "echo", {"text": "hi"})
+        self.assertFalse(result.is_error)
+        self.assertEqual(result.structured_content, {"text": "hi"})
+
+    def test_anticipated_errors_keep_their_text_and_classification(self):
+        mcp, _ = build()
+        cases = (("bad", "INVALID_ARGUMENT", "rejected", "text must not be bad"),
+                 ("busy", "OUTCOME_UNKNOWN", "unknown", "application is busy"),
+                 ("locked", "PROJECT_LOCKED", "rejected", "project is locked"))
+        for text, code, outcome, message in cases:
+            with self.subTest(text=text):
+                result = call(mcp, "echo", {"text": text})
+                self.assertTrue(result.is_error)
+                self.assertIn(message, result.content[0].text)
+                error = result.structured_content["error"]
+                self.assertEqual((error["code"], error["outcome"], error["operation"]),
+                                 (code, outcome, "echo"))
+
+    def test_a_defect_keeps_its_details_on_the_server(self):
+        mcp, _ = build()
+        with self.assertLogs("cavi_mcp_core.server", "ERROR"):
+            result = call(mcp, "echo", {"text": "defect"})
+        self.assertTrue(result.is_error)
+        self.assertNotIn("internal detail", result.content[0].text)
+        self.assertEqual(result.structured_content["error"]["outcome"], "unknown")
+
+    def test_unknown_tools_are_rejected_with_a_recovery_hint(self):
+        mcp, _ = build()
+        result = call(mcp, "missing", {})
+        error = result.structured_content["error"]
+        self.assertEqual((error["code"], error["outcome"], error["next_action"]),
+                         ("TOOL_NOT_FOUND", "rejected", "list_tools"))
+
+    def test_invalid_arguments_are_rejections(self):
+        mcp, _ = build()
+        result = call(mcp, "echo", {"text": 3})
+        self.assertEqual(result.structured_content["error"]["code"], "INVALID_ARGUMENT")
+
+    def test_without_anticipated_errors_the_sdk_hides_tool_error_text(self):
+        mcp, _ = build(anticipated=())
+        result = call(mcp, "echo", {"text": "bad"})
+        self.assertNotIn("text must not be bad", result.content[0].text)
+        self.assertEqual(result.structured_content["error"]["outcome"], "unknown")
+
+    def test_failure_can_name_a_recovery_tool(self):
+        class Recovering(Server):
+            def failure(self, name, error):
+                return failure(name, error, unknown_next_action="inspect_job")
+
+        mcp = Recovering("demo", version="1")
+
+        @mcp.tool(annotations=WRITES)
+        async def start() -> dict:
+            raise RuntimeError("lost")
+
+        error = call(mcp, "start", {}).structured_content["error"]
+        self.assertEqual(error["next_action"], "inspect_job")
+
+    def test_tool_schemas_are_compact_unless_disabled(self):
+        compact, _ = build()
+        full, _ = build(compact=False)
+        compact_tool = asyncio.run(session_tools(compact))[0]
+        full_tool = asyncio.run(session_tools(full))[0]
+        self.assertNotIn("title", compact_tool.input_schema)
+        self.assertEqual(compact_tool.input_schema["properties"]["note"]["type"],
+                         ["string", "null"])
+        self.assertNotIn("default", compact_tool.output_schema["properties"]["note"])
+        self.assertIn("title", full_tool.input_schema)
+
+    def test_decorated_tools_stay_directly_callable(self):
+        _, echo = build()
+        with self.assertRaises(ValueError):
+            asyncio.run(echo("bad"))
+        self.assertEqual(asyncio.run(echo("hi")), Echo(text="hi"))
+
+    def test_direct_server_calls_raise_instead_of_returning_failures(self):
+        mcp, _ = build()
+        with self.assertRaises(ToolError):
+            asyncio.run(mcp.call_tool("echo", {"text": "bad"}))
+        with self.assertRaises(ToolError):
+            asyncio.run(mcp.call_tool("missing", {}))
+
+
+class HelperTests(unittest.TestCase):
+    def test_need_returns_a_passed_value_and_names_a_missing_one(self):
+        for value in ("a.png", 0, False, "", []):
+            self.assertIs(need(value, "path", "info"), value)
+        with self.assertRaisesRegex(ValueError, r"^path is required for action=info$"):
+            need(None, "path", "info")
+
+    def test_reject_foreign_lists_unexpected_arguments_in_order(self):
+        reject_foreign("info", {"path": "a", "graph": None}, {"path"})
+        with self.assertRaisesRegex(ValueError, r"^Not valid for action=info: directory, graph$"):
+            reject_foreign("info", {"path": "a", "graph": "g", "directory": "d"}, {"path"})
+
+    def test_annotations_never_reach_beyond_the_machine(self):
+        for annotation in (READ_ONLY, WRITES, DESTRUCTIVE):
+            self.assertFalse(annotation.open_world_hint)
+        self.assertTrue(READ_ONLY.read_only_hint and READ_ONLY.idempotent_hint)
+        self.assertTrue(DESTRUCTIVE.destructive_hint)
+        self.assertFalse(WRITES.read_only_hint or WRITES.destructive_hint)
+
+
+if __name__ == "__main__":
+    unittest.main()
