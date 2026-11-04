@@ -2,8 +2,10 @@
 
 Shared plumbing for the CAVI MCP servers ([blender-mcp](https://github.com/cavi-ai/blender-mcp),
 [substance-mcp](https://github.com/cavi-ai/substance-mcp),
-[houdini-mcp](https://github.com/cavi-ai/houdini-mcp)): one server type, one failure
-contract, one schema compaction and one bounded process runner.
+[houdini-mcp](https://github.com/cavi-ai/houdini-mcp),
+[adobe-mcp](https://github.com/cavi-ai/adobe-mcp)): one server type, one failure contract,
+one schema compaction, one bounded process runner, bounded file reads and an operation
+journal.
 
 ## Install
 
@@ -68,6 +70,18 @@ values; `output=True` also drops defaults, which are documentation only in a res
 timeout or a cancellation it stops the whole process group (process tree on Windows) and
 returns once the process exits. `proc.run_sync` is the blocking form and
 `proc.diagnostics(result)` formats what a failed run printed.
+
+## Files and journals
+
+`files.inside(workspace, path)` resolves a path inside an existing workspace and refuses
+`..`, escapes through symbolic links and the workspace root. `files.read_bytes`,
+`files.load_json` and `files.digest` read bounded regular files and refuse a file that
+changes while it is read; `files.parse_json` refuses NaN and Infinity.
+
+`journal.write_json` replaces a JSON file atomically, durably and readable only by its
+owner. `journal.completion` reads the completion receipt of one operation,
+`journal.archive` records how an interrupted operation was resolved, and
+`journal.fingerprint` hashes canonical JSON.
 
 ## Development
 

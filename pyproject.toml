@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "cavi-mcp-core"
 version = "0.1.0"
-description = "Server type, result contracts, schema compaction and bounded processes for CAVI MCP servers"
+description = "Server type, result contracts, schemas, bounded processes and file journals for CAVI MCP servers"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]

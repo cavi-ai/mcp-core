@@ -10,3 +10,4 @@
 - `Result`, `VariantResult`, `OperationRejected`, `OperationUnknown` and `failure` result contracts.
 - Schema compaction and variant validation helpers.
 - Bounded subprocess runner with process-group termination.
+- Workspace-confined bounded file reads and an atomic JSON operation journal.
