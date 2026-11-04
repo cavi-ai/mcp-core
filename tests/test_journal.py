@@ -19,7 +19,8 @@ class JournalTests(unittest.TestCase):
         write_json(path, {"a": 1})
         write_json(path, {"a": 2})
         self.assertEqual(json.loads(path.read_text()), {"a": 2})
-        self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
+        if os.name != "nt":
+            self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
         self.assertEqual([p.name for p in self.root.iterdir()], ["state.json"])
         with self.assertRaises(ValueError):
             write_json(self.root / "nan.json", {"a": float("nan")})

@@ -18,11 +18,13 @@ def write_json(path, value):
             stream.flush()
             os.fsync(stream.fileno())
         os.replace(temporary, path)
-        parent = os.open(path.parent, os.O_RDONLY)
-        try:
-            os.fsync(parent)
-        finally:
-            os.close(parent)
+        # Windows cannot open a directory to flush it; NTFS journals the rename itself.
+        if os.name != "nt":
+            parent = os.open(path.parent, os.O_RDONLY)
+            try:
+                os.fsync(parent)
+            finally:
+                os.close(parent)
     finally:
         temporary.unlink(missing_ok=True)
 
