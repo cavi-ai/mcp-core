@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.1.1 - 2026-11-04
+
+### Added
+
+- `apps`: application lookup by override, default location and `PATH`; macOS bundle lookup by identifier with `AppUnavailable` and `AppMismatch`; version and running-process probes.
+
 ## 0.1.0 - 2026-11-04
 
 ### Added
