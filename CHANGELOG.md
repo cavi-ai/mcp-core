@@ -7,7 +7,7 @@ Versions come from git tags; a pull request adds its lines under Unreleased and 
 ### Changed
 
 - The package version is read from the release tag.
-- Requires Python 3.15 or newer; CI lints and tests once, on Linux with Python 3.15.
+- Requires Python 3.15 or newer; CI lints and tests once, on Linux with Python 3.15; a green `main` dispatches `server-merged` to game-art-pipeline, whose pin bot moves it to that commit.
 
 ## 0.1.1 - 2026-11-04
 
