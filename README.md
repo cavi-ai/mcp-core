@@ -71,6 +71,17 @@ timeout or a cancellation it stops the whole process group (process tree on Wind
 returns once the process exits. `proc.run_sync` is the blocking form and
 `proc.diagnostics(result)` formats what a failed run printed.
 
+## Applications
+
+`apps.find_directory`, `apps.find_app` and `apps.find_executable` locate an installed
+application in one order: an environment override, which is final, then the default
+location the caller passes, then `PATH`. `apps.bundle(name, identifier, pattern, env)`
+finds a macOS application by its bundle identifier: the override in `env` when set, else
+the newest matching bundle under `/Applications`; it raises `AppUnavailable` or
+`AppMismatch` with a stable `error_code`. `apps.version` reads a bundle's version without
+running it, `apps.running` asks whether an executable has a process, and
+`apps.processes` lists the processes of one executable on macOS.
+
 ## Files and journals
 
 `files.inside(workspace, path)` resolves a path inside an existing workspace and refuses
