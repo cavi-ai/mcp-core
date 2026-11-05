@@ -13,7 +13,7 @@ journal.
 uv add cavi-mcp-core
 ```
 
-Requires Python 3.11+ and the MCP Python SDK 2.
+Requires Python 3.15+ and the MCP Python SDK 2.
 
 ## Server
 
