@@ -1,6 +1,12 @@
 # Changelog
 
+Versions come from git tags; a pull request adds its lines under Unreleased and never edits a version.
+
 ## Unreleased
+
+### Changed
+
+- The package version is read from the release tag.
 
 ## 0.1.1 - 2026-11-04
 

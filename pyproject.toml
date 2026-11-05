@@ -1,10 +1,10 @@
 [build-system]
-requires = ["hatchling>=1.27"]
+requires = ["hatchling>=1.27", "hatch-vcs>=0.4"]
 build-backend = "hatchling.build"
 
 [project]
 name = "cavi-mcp-core"
-version = "0.1.1"
+dynamic = ["version"]
 description = "Server type, result contracts, schemas, bounded processes and file journals for CAVI MCP servers"
 readme = "README.md"
 license = "MIT"
@@ -34,6 +34,10 @@ Changelog = "https://github.com/cavi-ai/mcp-core/blob/main/CHANGELOG.md"
 
 [dependency-groups]
 dev = ["ruff>=0.14,<1"]
+
+# The version comes from the git tag: vX.Y.Z builds X.Y.Z, later commits X.Y.(Z+1).devN+g<sha>.
+[tool.hatch.version]
+source = "vcs"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/cavi_mcp_core"]
