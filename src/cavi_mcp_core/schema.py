@@ -69,6 +69,8 @@ def _disjoint_union(branches):
 def compact_union(schema):
     """Shorten equivalent union forms; output defaults are documentation only."""
     branches = schema.get("anyOf", [])
+    if any(not isinstance(branch, dict) for branch in branches):
+        return schema
     if branches and "type" not in schema and all(
         set(item) == {"type"} and isinstance(item["type"], str) for item in branches
     ):

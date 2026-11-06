@@ -206,6 +206,15 @@ class SchemaSemanticsTests(unittest.TestCase):
                   "unevaluatedProperties": False}
         self.assert_equivalent(schema, [{}, {"x": 1}, {"x": None}, None])
 
+    def test_boolean_union_branches_remain_valid_schemas(self):
+        for branches in (
+            [{"type": "string", "minLength": 1}, False],
+            [False, {"type": "string"}],
+            [True, {"type": "null"}],
+            [False, {"type": "null"}],
+        ):
+            self.assert_equivalent({"anyOf": branches}, [None, "", "x", 0, {}, []])
+
 
 if __name__ == "__main__":
     unittest.main()
