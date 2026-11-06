@@ -146,6 +146,34 @@ class ServerTests(unittest.TestCase):
         self.assertTrue(call(mcp, "status", {"unexpected": 1}).is_error)
         self.assertEqual(call(mcp, "status", {}).structured_content, {"text": "ready"})
 
+    def test_python_docstrings_drop_source_indent_and_keep_relative_code_indent(self):
+        mcp = Server("docs", version="1")
+
+        @mcp.tool(annotations=READ_ONLY)
+        async def read_status() -> Echo:
+            """Read the status.
+
+            Example::
+
+                read_status()
+            """
+            return Echo(text="ready")
+
+        description = asyncio.run(session_tools(mcp))[0].description
+        self.assertEqual(description, "Read the status.\n\nExample::\n\n    read_status()")
+
+    def test_explicit_descriptions_are_not_rewritten_by_registration(self):
+        mcp = Server("docs", version="1", warn_on_duplicate_tools=False)
+        description = "    Literal code\n        preserved indentation\n"
+
+        async def read_status() -> Echo:
+            """Different fallback text."""
+            return Echo(text="ready")
+
+        mcp.add_tool(read_status, description=description)
+        mcp.add_tool(read_status)
+        self.assertEqual(asyncio.run(session_tools(mcp))[0].description, description)
+
     def test_without_anticipated_errors_the_sdk_hides_tool_error_text(self):
         mcp, _ = build(anticipated=())
         result = call(mcp, "echo", {"text": "bad"})
