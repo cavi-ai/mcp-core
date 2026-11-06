@@ -1,11 +1,10 @@
 # Cavi MCP Core
 
-Shared plumbing for the CAVI MCP servers ([blender-mcp](https://github.com/cavi-ai/blender-mcp),
-[substance-mcp](https://github.com/cavi-ai/substance-mcp),
-[houdini-mcp](https://github.com/cavi-ai/houdini-mcp),
-[adobe-mcp](https://github.com/cavi-ai/adobe-mcp)): one server type, one failure contract,
-one schema compaction, one bounded process runner, bounded file reads and an operation
-journal.
+Build Python MCP servers with typed results, compact schemas and structured failures.
+Cavi MCP Core also provides bounded process and file operations and an operation journal.
+It is a library for server authors, used by [Blender MCP](https://github.com/cavi-ai/blender-mcp),
+[Substance MCP](https://github.com/cavi-ai/substance-mcp) and
+[Adobe MCP](https://github.com/cavi-ai/adobe-mcp).
 
 ## Install
 
@@ -13,19 +12,47 @@ journal.
 uv add cavi-mcp-core
 ```
 
-Requires Python 3.15+ and the MCP Python SDK 2.
+The current source checkout requires Python 3.15+ and the MCP Python SDK 2.
+Release [v0.1.1](https://github.com/cavi-ai/mcp-core/releases/tag/v0.1.1) requires
+Python 3.11+; the installed release's package metadata determines its requirements.
+
+## Run your first tool
+
+From a source checkout, run the included read-only example:
+
+```sh
+git clone https://github.com/cavi-ai/mcp-core.git
+cd mcp-core
+uv sync --locked --dev
+uv run --locked python examples/inspect_status.py
+```
+
+Expected standard output:
+
+```json
+{"ready": true}
+```
+
+The client starts [status_server.py](examples/status_server.py) as a subprocess,
+lists its tools and calls `status` over stdio. Exiting the client closes that server.
+No application, model, account or external service is needed. The example checks the
+server connection; it does not establish any consuming application's behavior.
 
 ## Server
 
 ```python
 from cavi_mcp_core.server import READ_ONLY, Server
 
-mcp = Server("my-mcp", package="my-mcp", instructions="Inspect before editing.")
+mcp = Server("status-example", package="cavi-mcp-core", instructions="Read readiness.")
 
 
 @mcp.tool(annotations=READ_ONLY)
 async def status() -> dict:
     return {"ready": True}
+
+
+if __name__ == "__main__":
+    mcp.run(transport="stdio")
 ```
 
 `Server` extends `mcp.server.mcpserver.MCPServer`:
@@ -119,6 +146,15 @@ The fixture checks the shared server layer; application behavior is evaluated
 in each consuming server. Locally, `MCPEVAL_EXECUTABLE` selects a source-built
 binary; the default npm wrapper installs its checksum-verified release.
 
+## Help and contributing
+
+[Report a reproducible issue](https://github.com/cavi-ai/mcp-core/issues) with the
+Python and package versions, command, expected result and actual result. Remove private
+paths and tool values before sharing. For a pull request, run the development checks
+above and include a focused test for changed behavior.
+
+Report vulnerabilities privately through the [security policy](https://github.com/cavi-ai/.github/blob/main/SECURITY.md).
+
 ## License
 
-MIT
+[MIT](LICENSE).

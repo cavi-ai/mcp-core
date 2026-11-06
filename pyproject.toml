@@ -42,7 +42,7 @@ packages = ["src/cavi_mcp_core"]
 
 [tool.hatch.build.targets.sdist]
 include = [
-    "/src", "/tests", "/evals", "/package.json",
+    "/src", "/tests", "/evals", "/examples", "/package.json",
     "/README.md", "/LICENSE", "/CHANGELOG.md", "/pyproject.toml",
 ]
 
