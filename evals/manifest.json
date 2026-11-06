@@ -1,0 +1,142 @@
+{
+  "version": 1,
+  "probes": [
+    {
+      "id": "discovery-budget",
+      "probe": "discovery-cost",
+      "access": "read_only",
+      "max_tools": 1,
+      "max_schema_bytes": 3000
+    },
+    {
+      "id": "token-budget",
+      "probe": "token-cost",
+      "access": "read_only",
+      "max_total_tokens": 2000,
+      "max_tool_tokens": 1000
+    },
+    {
+      "id": "catalog-pagination",
+      "probe": "pagination",
+      "access": "read_only",
+      "max_pages": 2
+    },
+    {
+      "id": "declared-surfaces",
+      "probe": "surface-listing",
+      "access": "read_only",
+      "max_pages": 2
+    },
+    {
+      "id": "protocol-version",
+      "probe": "protocol-negotiation",
+      "access": "read_only",
+      "bogus_version": "2099-01-01"
+    },
+    {
+      "id": "echo-arguments",
+      "probe": "schema-guessability",
+      "access": "read_only",
+      "tool": "echo",
+      "arguments": {
+        "text": "hello"
+      }
+    },
+    {
+      "id": "echo-output",
+      "probe": "output-schema",
+      "access": "read_only",
+      "tool": "echo",
+      "arguments": {
+        "text": "hello"
+      }
+    },
+    {
+      "id": "echo-result",
+      "probe": "instruction-fidelity",
+      "access": "read_only",
+      "tool": "echo",
+      "arguments": {
+        "text": "hello"
+      },
+      "expect": {
+        "outcome": "ok",
+        "equals_paths": {
+          "/structuredContent/text": "hello"
+        }
+      }
+    },
+    {
+      "id": "echo-rejection",
+      "probe": "instruction-fidelity",
+      "access": "read_only",
+      "tool": "echo",
+      "arguments": {
+        "text": "reject"
+      },
+      "expect": {
+        "outcome": "error"
+      }
+    },
+    {
+      "id": "echo-recovery",
+      "probe": "workflow",
+      "access": "read_only",
+      "repetitions": 3,
+      "steps": [
+        {
+          "tool": "echo",
+          "arguments": {
+            "text": "hello"
+          },
+          "expect": {
+            "outcome": "ok",
+            "equals_paths": {
+              "/structuredContent/text": "hello"
+            }
+          }
+        },
+        {
+          "tool": "echo",
+          "arguments": {
+            "text": "reject"
+          },
+          "expect": {
+            "outcome": "error"
+          }
+        },
+        {
+          "tool": "echo",
+          "arguments": {
+            "text": "hello"
+          },
+          "expect": {
+            "outcome": "ok",
+            "equals_paths": {
+              "/structuredContent/text": "hello"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "echo-repeat",
+      "probe": "degradation-over-n",
+      "access": "read_only",
+      "tool": "echo",
+      "arguments": {
+        "text": "hello"
+      },
+      "max_attempts": 3
+    },
+    {
+      "id": "echo-contention",
+      "probe": "contention",
+      "access": "read_only",
+      "tool": "echo",
+      "arguments": {
+        "text": "hello"
+      }
+    }
+  ]
+}
