@@ -2,7 +2,7 @@
 
 import math
 
-from .schema_refs import inline_definitions, intern_definitions
+from .schema_refs import ANNOTATIONS, inline_definitions, intern_definitions, preserve_structure
 
 
 def _has_type(value, kind):
@@ -77,7 +77,8 @@ def compact_union(schema):
             types.remove("integer")
         schema.pop("anyOf")
         schema["type"] = types[0] if len(types) == 1 else types
-    elif len(branches) == 2 and {"type": "null"} in branches:
+    elif (len(branches) == 2 and {"type": "null"} in branches
+          and not schema.keys() - ANNOTATIONS - {"anyOf", "$defs", "$schema", "title"}):
         other = next(item for item in branches if item != {"type": "null"})
         safe = {
             "type",
@@ -121,7 +122,8 @@ def compact_union(schema):
         ):
             schema.pop("anyOf")
             schema.update(merged)
-    if schema.get("anyOf"):
+    if (schema.get("anyOf")
+            and not schema.keys() - ANNOTATIONS - {"anyOf", "$defs", "$schema", "title"}):
         merged = _disjoint_union(schema["anyOf"])
         if merged and not any(
             key in schema and schema[key] != value for key, value in merged.items()
@@ -177,6 +179,8 @@ def _compact_schema(schema, *, output=False):
 
 def compact_schema(schema, *, output=False):
     """Shorten equivalent validation rules while retaining use-site descriptions."""
+    if preserve_structure(schema):
+        return schema
     normalized = _compact_schema(schema, output=output)
     inlined = inline_definitions(normalized)
     result = _compact_schema(inlined, output=output) if inlined != normalized else normalized

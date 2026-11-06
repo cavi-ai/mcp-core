@@ -30,11 +30,17 @@ def map_schema(schema, visit, *, visit_root=True):
     return visit(result) if visit_root else result
 
 
-def _scoped(schema):
+def preserve_structure(schema):
+    """Keep scoped evaluation and descendant JSON Pointer targets in place."""
     found = []
 
     def check(node):
-        if SCOPES & node.keys():
+        ref = node.get("$ref", "")
+        descendant = isinstance(ref, str) and ref.startswith("#/") and not (
+            ref.startswith("#/$defs/") and ref[8:] and "/" not in ref[8:]
+        )
+        if (SCOPES & node.keys() or descendant
+                or {"unevaluatedProperties", "unevaluatedItems"} & node.keys()):
             found.append(True)
         return node
 
@@ -52,7 +58,7 @@ def _validation(node):
 
 def intern_definitions(schema):
     """Share repeated validation only when the complete serialized schema shrinks."""
-    if not isinstance(schema, dict) or _scoped(schema):
+    if not isinstance(schema, dict) or preserve_structure(schema):
         return schema
     result = schema
     while True:
@@ -98,7 +104,7 @@ def inline_definitions(schema):
     """Keep recursive, shared, scoped and conflicting references intact."""
     if not isinstance(schema, dict) or not schema.get("$defs"):
         return schema
-    if _scoped(schema):
+    if preserve_structure(schema):
         return schema
     result = schema
     while result.get("$defs"):

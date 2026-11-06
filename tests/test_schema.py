@@ -171,6 +171,41 @@ class SchemaSemanticsTests(unittest.TestCase):
         ]}
         self.assert_equivalent(schema, [None, {}, {"x": 1}, {"x": "bad"}, {"y": 1}])
 
+    def test_lifted_object_assertions_do_not_see_outer_properties(self):
+        for alternate in ({"type": "null"}, {"type": "array"}):
+            schema = {"properties": {"x": {"type": "integer"}}, "anyOf": [
+                {"type": "object", "additionalProperties": False}, alternate,
+            ]}
+            self.assert_equivalent(schema, [None, [], {}, {"x": 1}, {"x": "bad"}])
+        schema = {"additionalProperties": False, "anyOf": [
+            {"type": "object", "properties": {"x": {"type": "integer"}}},
+            {"type": "null"},
+        ]}
+        self.assert_equivalent(schema, [None, {}, {"x": 1}, {"y": 1}])
+
+    def test_compaction_preserves_descendant_pointer_targets(self):
+        shape = {"type": "object", "properties": {
+            "long_property_name": {"type": "string", "minLength": 20}},
+            "additionalProperties": False}
+        for pointer, definitions in (
+            ("#/properties/a/properties/long_property_name", {}),
+            ("#/$defs/A/properties/long_property_name", {"A": shape}),
+        ):
+            schema = {"type": "object", "properties": {
+                "a": shape, "b": shape, "c": {"$ref": pointer}}, "$defs": definitions}
+            self.assert_equivalent(schema, [{}, {"c": "short"}, {"c": "x" * 20}, {"c": 1}])
+        schema = {"properties": {
+            "a": {"type": "array", "prefixItems": [{"type": "number"}] * 2,
+                  "maxItems": 2},
+            "b": {"$ref": "#/properties/a/prefixItems/0"},
+        }}
+        self.assert_equivalent(schema, [{"a": [1, 2], "b": 1}, {"b": "bad"}])
+
+    def test_explicit_additional_properties_still_marks_evaluated_properties(self):
+        schema = {"type": "object", "additionalProperties": True,
+                  "unevaluatedProperties": False}
+        self.assert_equivalent(schema, [{}, {"x": 1}, {"x": None}, None])
+
 
 if __name__ == "__main__":
     unittest.main()
