@@ -1,6 +1,7 @@
 """The MCP server type for CAVI tool servers."""
 
 import functools
+import inspect
 import logging
 from importlib.metadata import version
 
@@ -78,6 +79,26 @@ class Server(MCPServer):
         super().__init__(name, **kwargs)
         self.anticipated_errors = tuple(anticipated)
         self.compact_schemas = compact
+        for tool in self._tool_manager.list_tools():
+            self._close_arguments(tool)
+
+    @staticmethod
+    def _close_arguments(tool):
+        model = tool.fn_metadata.arg_model
+        model.model_config = {**model.model_config, "extra": "forbid"}
+        model.model_rebuild(force=True)
+        tool.parameters = model.model_json_schema()
+
+    def add_tool(self, fn, name=None, *args, **kwargs):
+        """Reject undeclared arguments in both the catalog and the actual dispatcher."""
+        registered_name = name or fn.__name__
+        existing = self._tool_manager.get_tool(registered_name)
+        description = args[1] if len(args) > 1 else kwargs.get("description")
+        super().add_tool(fn, name, *args, **kwargs)
+        tool = self._tool_manager.get_tool(registered_name)
+        self._close_arguments(tool)
+        if existing is None and description is None and fn.__doc__:
+            tool.description = inspect.cleandoc(fn.__doc__)
 
     async def list_tools(self):
         tools = await super().list_tools()

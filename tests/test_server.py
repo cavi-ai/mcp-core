@@ -4,6 +4,7 @@ from importlib.metadata import version
 
 from mcp import Client
 from mcp.server.mcpserver.exceptions import ToolError
+from mcp.server.mcpserver.tools.base import Tool
 
 from cavi_mcp_core.contracts import OperationRejected, Result, failure
 from cavi_mcp_core.server import (
@@ -99,6 +100,79 @@ class ServerTests(unittest.TestCase):
         mcp, _ = build()
         result = call(mcp, "echo", {"text": 3})
         self.assertEqual(result.structured_content["error"]["code"], "INVALID_ARGUMENT")
+
+    def test_unknown_arguments_are_rejected_instead_of_silently_ignored(self):
+        mcp, _ = build()
+        result = call(mcp, "echo", {"text": "hi", "unexpected": 1})
+        self.assertTrue(result.is_error)
+        self.assertEqual(result.structured_content["error"]["code"], "INVALID_ARGUMENT")
+        tool = asyncio.run(session_tools(mcp))[0]
+        self.assertIs(tool.input_schema["additionalProperties"], False)
+        self.assertFalse(call(mcp, "echo", {"text": "hi"}).is_error)
+
+    def test_parameterless_tools_refuse_unknown_arguments_without_running(self):
+        mcp = Server("status", version="1")
+        calls = []
+
+        @mcp.tool(name="read_status", annotations=READ_ONLY)
+        async def status() -> Echo:
+            calls.append(True)
+            return Echo(text="ready")
+
+        result = call(mcp, "read_status", {"unexpected": 1})
+        self.assertTrue(result.is_error)
+        self.assertEqual(calls, [])
+        self.assertEqual(result.structured_content["error"]["code"], "INVALID_ARGUMENT")
+        tool = asyncio.run(session_tools(mcp))[0]
+        self.assertIs(tool.input_schema["additionalProperties"], False)
+        self.assertEqual(call(mcp, "read_status", {}).structured_content, {"text": "ready"})
+        self.assertEqual(calls, [True])
+
+    def test_directly_added_tools_have_the_same_closed_input_contract(self):
+        mcp = Server("direct", version="1")
+
+        async def status() -> dict:
+            return {"ready": True}
+
+        mcp.add_tool(status, name="read_status")
+        self.assertTrue(call(mcp, "read_status", {"unexpected": 1}).is_error)
+        self.assertFalse(call(mcp, "read_status", {}).is_error)
+
+    def test_constructor_tools_have_the_same_closed_input_contract(self):
+        async def status() -> Echo:
+            return Echo(text="ready")
+
+        mcp = Server("prebuilt", version="1", tools=[Tool.from_function(status)])
+        self.assertTrue(call(mcp, "status", {"unexpected": 1}).is_error)
+        self.assertEqual(call(mcp, "status", {}).structured_content, {"text": "ready"})
+
+    def test_python_docstrings_drop_source_indent_and_keep_relative_code_indent(self):
+        mcp = Server("docs", version="1")
+
+        @mcp.tool(annotations=READ_ONLY)
+        async def read_status() -> Echo:
+            """Read the status.
+
+            Example::
+
+                read_status()
+            """
+            return Echo(text="ready")
+
+        description = asyncio.run(session_tools(mcp))[0].description
+        self.assertEqual(description, "Read the status.\n\nExample::\n\n    read_status()")
+
+    def test_explicit_descriptions_are_not_rewritten_by_registration(self):
+        mcp = Server("docs", version="1", warn_on_duplicate_tools=False)
+        description = "    Literal code\n        preserved indentation\n"
+
+        async def read_status() -> Echo:
+            """Different fallback text."""
+            return Echo(text="ready")
+
+        mcp.add_tool(read_status, description=description)
+        mcp.add_tool(read_status)
+        self.assertEqual(asyncio.run(session_tools(mcp))[0].description, description)
 
     def test_without_anticipated_errors_the_sdk_hides_tool_error_text(self):
         mcp, _ = build(anticipated=())

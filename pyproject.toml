@@ -31,7 +31,7 @@ Issues = "https://github.com/cavi-ai/mcp-core/issues"
 Changelog = "https://github.com/cavi-ai/mcp-core/blob/main/CHANGELOG.md"
 
 [dependency-groups]
-dev = ["ruff>=0.14,<1"]
+dev = ["jsonschema>=4.26,<5", "ruff>=0.14,<1"]
 
 # The version comes from the git tag: vX.Y.Z builds X.Y.Z, later commits X.Y.(Z+1).devN+g<sha>.
 [tool.hatch.version]

@@ -31,7 +31,9 @@ async def status() -> dict:
 `Server` extends `mcp.server.mcpserver.MCPServer`:
 
 - `package` sets the reported server version from that distribution's metadata.
-- Tool schemas are compacted (`compact=False` keeps the SDK's schemas).
+- Tool schemas are compacted (`compact=False` keeps the generated schemas unshortened).
+- Undeclared arguments are rejected before tool execution, including for tools
+  with no parameters.
 - `ValueError`, `RuntimeError` and `OSError` raised by a tool reach the caller with their
   text; any other exception is logged on the server and reported without details. Pass
   `anticipated=()` to leave tool errors to the SDK.
