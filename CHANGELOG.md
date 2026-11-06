@@ -4,9 +4,12 @@ Versions come from git tags; a pull request adds its lines under Unreleased and 
 
 ## Unreleased
 
+## 0.1.2 - 2026-11-06
+
 ### Changed
 
 - Tool arguments reject undeclared fields before execution.
+- Tool descriptions omit Python source indentation.
 - Schemas share repeated validation rules and shorten equivalent unions, fixed
   tuples, and single-use references while retaining parameter descriptions and bounds.
 - The package version is read from the release tag.
