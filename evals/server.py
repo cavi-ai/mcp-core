@@ -17,6 +17,16 @@ class Echo(Result):
     text: str
 
 
+class Status(Result):
+    ready: bool
+
+
+@mcp.tool(annotations=READ_ONLY)
+async def status() -> Status:
+    """Report whether this isolated contract-evaluation server is ready."""
+    return Status(ready=True)
+
+
 @mcp.tool(annotations=READ_ONLY)
 async def echo(
     text: Annotated[str, Field(description="Text to echo; reject is reserved.")],

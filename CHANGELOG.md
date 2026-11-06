@@ -6,6 +6,9 @@ Versions come from git tags; a pull request adds its lines under Unreleased and 
 
 ### Changed
 
+- Tool arguments reject undeclared fields before execution.
+- Schemas share repeated validation rules and shorten equivalent unions, fixed
+  tuples, and single-use references while retaining parameter descriptions and bounds.
 - The package version is read from the release tag.
 - Requires Python 3.15 or newer; CI lints and tests once, on Linux with Python 3.15; a green `main` dispatches `server-merged` to game-art-pipeline, whose pin bot moves it to that commit.
 

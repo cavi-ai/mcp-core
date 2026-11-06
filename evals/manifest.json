@@ -5,7 +5,7 @@
       "id": "discovery-budget",
       "probe": "discovery-cost",
       "access": "read_only",
-      "max_tools": 1,
+      "max_tools": 2,
       "max_schema_bytes": 3000
     },
     {
@@ -137,6 +137,40 @@
       "arguments": {
         "text": "hello"
       }
+    },
+    {
+      "id": "empty-tool-output",
+      "probe": "output-schema",
+      "access": "read_only",
+      "tool": "status",
+      "arguments": {}
+    },
+    {
+      "id": "empty-tool-rejection-recovery",
+      "probe": "workflow",
+      "access": "read_only",
+      "repetitions": 3,
+      "steps": [
+        {
+          "tool": "status",
+          "arguments": {
+            "unexpected": 1
+          },
+          "expect": {
+            "outcome": "error"
+          }
+        },
+        {
+          "tool": "status",
+          "arguments": {},
+          "expect": {
+            "outcome": "ok",
+            "equals_paths": {
+              "/structuredContent/ready": true
+            }
+          }
+        }
+      ]
     }
   ]
 }

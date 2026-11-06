@@ -1,9 +1,75 @@
 """Shared response-schema normalization and action-shape validation."""
 
+import math
+
+from .schema_refs import inline_definitions, intern_definitions
+
+
+def _has_type(value, kind):
+    if isinstance(kind, list):
+        return any(_has_type(value, item) for item in kind)
+    if kind == "integer":
+        return type(value) is int or (type(value) is float and value.is_integer())
+    if kind == "number":
+        return type(value) is int or (type(value) is float and math.isfinite(value))
+    return {
+        "null": value is None,
+        "boolean": type(value) is bool,
+        "string": isinstance(value, str),
+        "array": isinstance(value, list),
+        "object": isinstance(value, dict),
+    }.get(kind, False)
+
+
+def _compact_array(schema):
+    items = schema.get("prefixItems")
+    if not items or not all(item == items[0] for item in items):
+        return
+    tail = schema.get("items", True)
+    maximum = schema.get("maxItems")
+    bounded = isinstance(maximum, int) and maximum <= len(items)
+    if tail is False:
+        schema["maxItems"] = min(maximum, len(items)) if maximum is not None else len(items)
+    elif tail != items[0] and not bounded:
+        return
+    schema["items"] = items[0]
+    schema.pop("prefixItems")
+
+def _disjoint_union(branches):
+    """Lift assertions that apply to disjoint JSON types, never enum/const or scopes."""
+    numeric = {"minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf"}
+    allowed = {
+        "number": numeric,
+        "integer": numeric,
+        "string": {"minLength", "maxLength", "pattern"},
+        "array": {"items", "prefixItems", "contains", "minContains", "maxContains",
+                  "minItems", "maxItems", "uniqueItems"},
+        "object": {"properties", "required", "additionalProperties", "patternProperties",
+                   "propertyNames", "minProperties", "maxProperties", "dependentRequired",
+                   "dependentSchemas"},
+        "boolean": set(),
+        "null": set(),
+    }
+    kinds = [branch.get("type") for branch in branches]
+    if not all(isinstance(kind, str) and kind in allowed for kind in kinds):
+        return None
+    if len(set(kinds)) != len(kinds) or {"integer", "number"} <= set(kinds):
+        return None
+    merged = {"type": kinds}
+    for branch, kind in zip(branches, kinds, strict=True):
+        for key, value in branch.items():
+            if key == "type":
+                continue
+            if key not in allowed[kind] or (key in merged and merged[key] != value):
+                return None
+            merged[key] = value
+    return merged
+
+
 def compact_union(schema):
     """Shorten equivalent union forms; output defaults are documentation only."""
     branches = schema.get("anyOf", [])
-    if branches and all(
+    if branches and "type" not in schema and all(
         set(item) == {"type"} and isinstance(item["type"], str) for item in branches
     ):
         types = list(dict.fromkeys(item["type"] for item in branches))
@@ -36,36 +102,54 @@ def compact_union(schema):
             "enum",
             "const",
         }
+        merged = None
+        if set(other) == {"const"}:
+            value = other["const"]
+            merged = {"enum": [value] if value is None else [value, None]}
+        elif set(other) == {"enum"}:
+            merged = {"enum": [*other["enum"]]}
+            if not any(value is None for value in merged["enum"]):
+                merged["enum"].append(None)
         if isinstance(other.get("type"), str) and set(other) <= safe:
+            merged = {**other, "type": [other["type"], "null"]}
+            if "const" in merged:
+                merged["enum"] = [merged.pop("const"), None]
+            elif "enum" in merged:
+                merged["enum"] = [*merged["enum"], None]
+        if merged and not any(
+            key in schema and schema[key] != value for key, value in merged.items()
+        ):
             schema.pop("anyOf")
-            schema.update(other)
-            schema["type"] = [other["type"], "null"]
-            if "const" in schema:
-                schema["enum"] = [schema.pop("const"), None]
-            elif "enum" in schema:
-                schema["enum"] = [*schema["enum"], None]
+            schema.update(merged)
+    if schema.get("anyOf"):
+        merged = _disjoint_union(schema["anyOf"])
+        if merged and not any(
+            key in schema and schema[key] != value for key, value in merged.items()
+        ):
+            schema.pop("anyOf")
+            schema.update(merged)
     return schema
 
 
-def compact_schema(schema, *, output=False):
+def _compact_schema(schema, *, output=False):
     """Remove redundant schema titles without changing property names or literal data."""
     if not isinstance(schema, dict):
         return schema
     result = {
         key: value
         for key, value in schema.items()
-        if key != "title" and not (output and key == "default")
+        if key != "title" and not (key == "default" and (output or value is None))
     }
     if result.get("additionalProperties") is True:
         result.pop("additionalProperties")
     for key in ("properties", "patternProperties", "$defs", "dependentSchemas"):
         if key in result:
             result[key] = {
-                name: compact_schema(value, output=output) for name, value in result[key].items()
+                name: _compact_schema(value, output=output) for name, value in result[key].items()
             }
     for key in ("allOf", "anyOf", "oneOf", "prefixItems"):
         if key in result:
-            result[key] = [compact_schema(value, output=output) for value in result[key]]
+            result[key] = [_compact_schema(value, output=output) for value in result[key]]
     for key in (
         "items",
         "additionalProperties",
@@ -79,8 +163,24 @@ def compact_schema(schema, *, output=False):
         "contentSchema",
     ):
         if key in result:
-            result[key] = compact_schema(result[key], output=output)
-    return compact_union(result)
+            result[key] = _compact_schema(result[key], output=output)
+    _compact_array(result)
+    result = compact_union(result)
+    kind = result.get("type")
+    values = result.get("enum")
+    if "const" in result:
+        values = [result["const"]]
+    if kind and values and all(_has_type(value, kind) for value in values):
+        result.pop("type")
+    return result
+
+
+def compact_schema(schema, *, output=False):
+    """Shorten equivalent validation rules while retaining use-site descriptions."""
+    normalized = _compact_schema(schema, output=output)
+    inlined = inline_definitions(normalized)
+    result = _compact_schema(inlined, output=output) if inlined != normalized else normalized
+    return intern_definitions(result)
 
 
 def validate_variant(value, fields, shapes, nullable):
