@@ -1,0 +1,11 @@
+{
+  "name": "cavi-mcp-core-evals",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "eval:protocol": "uv run --locked python evals/run.py"
+  },
+  "devDependencies": {
+    "@cavi-ai/mcp-eval": "github:cavi-ai/mcp-eval#main"
+  }
+}
