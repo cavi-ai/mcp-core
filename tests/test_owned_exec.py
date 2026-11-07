@@ -13,7 +13,7 @@ import time
 import unittest
 from pathlib import Path
 
-from cavi_mcp_core import proc
+from cavi_mcp_core import journal, proc
 
 
 def encoded(value):
@@ -43,18 +43,16 @@ class Owner:
         self.socket.settimeout(0.1)
         self.stop = threading.Event()
         self.config = root / "owner.json"
-        self.config.write_bytes(
-            encoded(
-                {
-                    "version": 1,
-                    "attempt": "unit-attempt",
-                    "socket": str(self.endpoint),
-                    "records": str(self.records),
-                    "token": "test-capability",
-                }
-            )
+        journal.write_json(
+            self.config,
+            {
+                "version": 1,
+                "attempt": "unit-attempt",
+                "socket": str(self.endpoint),
+                "records": str(self.records),
+                "token": "test-capability",
+            },
         )
-        self.config.chmod(0o600)
         self.permit, self.corrupt, self.slow = permit, corrupt, slow
         self.disconnect = disconnect
         self.duplicate = duplicate
@@ -84,13 +82,11 @@ class Owner:
                     return
                 if not self.allow.wait(5):
                     return
-                proof = encoded({"request": self.request, "birth_identity": "recorded-birth"})
                 record = self.records / "registered.json"
-                with record.open("xb") as output:
-                    record.chmod(0o600)
-                    output.write(proof)
-                    output.flush()
-                    os.fsync(output.fileno())
+                journal.write_json(
+                    record, {"request": self.request, "birth_identity": "recorded-birth"}
+                )
+                proof = record.read_bytes()
                 response = {
                     "launch_permitted": self.permit,
                     "request_sha256": hashlib.sha256(encoded(self.request)).hexdigest(),
