@@ -7,6 +7,55 @@ import uuid
 from pathlib import Path
 
 
+def _sync_directory(path):
+    if os.name != "nt":
+        descriptor = os.open(path, os.O_RDONLY)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+
+
+def create_directory(path):
+    """Create a new private canonical directory and durably link missing parents."""
+    path = Path(path).absolute()
+    if path != path.resolve():
+        raise ValueError("Use a canonical directory without symbolic links")
+    if path.exists():
+        raise FileExistsError(path)
+    missing = []
+    current = path
+    while not current.exists():
+        missing.append(current)
+        if current.parent == current:
+            raise FileNotFoundError("Directory filesystem root is unavailable: " + str(current))
+        current = current.parent
+    for directory in reversed(missing):
+        directory.mkdir(mode=0o700)
+        if os.name != "nt":
+            os.chmod(directory, 0o700)
+        _sync_directory(directory)
+        _sync_directory(directory.parent)
+    return path
+
+
+def create_json(path, value):
+    """Create a durable private record once and return the digest of its exact bytes."""
+    path = Path(path)
+    raw = (
+        json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n"
+    ).encode()
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(descriptor, "wb") as stream:
+        if os.name != "nt":
+            os.fchmod(stream.fileno(), 0o600)
+        stream.write(raw)
+        stream.flush()
+        os.fsync(stream.fileno())
+    _sync_directory(path.parent)
+    return hashlib.sha256(raw).hexdigest()
+
+
 def write_json(path, value):
     """Replace ``path`` with ``value`` atomically and durably; the file is private to the user."""
     path = Path(path)

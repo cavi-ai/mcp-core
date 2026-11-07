@@ -134,6 +134,48 @@ and cleanup. This gate supports audited launch sites; it does not contain
 arbitrary daemonizing programs. Keep owner configuration, capabilities and
 registration records private.
 
+### Process supervision
+
+On Linux and macOS, `supervision.run` owns the registration endpoint and checked
+process groups for one command. Call it from the resident process that owns the
+resource reservation:
+
+```python
+from cavi_mcp_core import supervision
+
+receipt = supervision.run(
+    command, cwd=workspace, env=environment, directory=new_record_directory,
+    max_seconds=1800, max_rss_kib=48 * 1024 * 1024,
+    minimum_available_kib=2 * 1024 * 1024,
+)
+```
+
+The caller selects all three limits; zero `minimum_available_kib` disables the
+headroom policy. The API checks registered PID/group/birth identities and socket
+peers, persists records before acknowledgment, bounds registration reads, and
+retires checked groups after exit, cancellation or a limit. New owner directories
+must be canonical and unused; their new parent links are synced. A configured
+owner cannot be replaced. Python's character locale and macOS startup text-encoding
+fields are normalized without importing unrelated ambient environment values.
+
+The receipt includes `exit_code`, `error`, `cleanup_error`, `registered_groups`,
+`peak_rss_kib` and elapsed `seconds`. Cleanup uncertainty requires retaining the
+resource reservation and records. Admission, detached supervisor lifetime,
+workload inputs and final application reports stay with the consuming adapter;
+[agent-sessions](https://github.com/cavi-ai/agent-sessions) supplies queue state.
+
+For a neutral Python command with retained records:
+
+```sh
+uv run --locked python examples/supervised_process.py --out /absolute/new-output
+```
+
+`processes.inspect`, `processes.group` and `processes.cleanup` expose the same
+checked identity/group operations for consuming adapters. `journal.create_json`
+creates an exclusive private record, syncs its file and directory, and returns
+its exact-byte SHA-256. Existing records are preserved. `journal.create_directory`
+durably links new private directories and any missing parents.
+
 ## Applications
 
 `apps.find_directory`, `apps.find_app` and `apps.find_executable` locate an installed
