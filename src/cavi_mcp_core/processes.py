@@ -1,30 +1,12 @@
 """Checked identities and cleanup for explicitly registered POSIX groups."""
 
-import ctypes
-import errno
-import functools
 import os
 import re
 import signal
-import struct
 import subprocess
 import sys
 import time
 from pathlib import Path
-
-
-@functools.lru_cache(maxsize=1)
-def _libproc():
-    library = ctypes.CDLL("/usr/lib/libproc.dylib", use_errno=True)
-    library.proc_pidinfo.argtypes = [
-        ctypes.c_int,
-        ctypes.c_int,
-        ctypes.c_uint64,
-        ctypes.c_void_p,
-        ctypes.c_int,
-    ]
-    library.proc_pidinfo.restype = ctypes.c_int
-    return library
 
 
 def birth(pid):
@@ -40,19 +22,9 @@ def birth(pid):
         boot = Path("/proc/sys/kernel/random/boot_id").read_text().strip()
         return "linux:" + boot + ":" + fields[19]
     if sys.platform == "darwin":
-        # Public proc_info.h: PROC_PIDTBSDINFO=3, LP64 proc_bsdinfo=136 bytes.
-        data = (ctypes.c_ubyte * 136)()
-        ctypes.set_errno(0)
-        size = _libproc().proc_pidinfo(pid, 3, 0, ctypes.byref(data), 136)
-        error = ctypes.get_errno()
-        if size == 0 and error == errno.ESRCH:
-            return None
-        if size != 136 or struct.unpack_from("=I", bytes(data), 12)[0] != pid:
-            raise OSError(error or errno.EIO, "Cannot establish process identity")
-        if struct.unpack_from("=I", bytes(data), 4)[0] == 5:  # SZOMB
-            return None
-        seconds, micros = struct.unpack_from("=QQ", bytes(data), 120)
-        return f"darwin:{seconds}:{micros}"
+        from . import sampling
+
+        return sampling.birth(pid)
     raise OSError("Native supervision supports Linux and macOS only")
 
 
