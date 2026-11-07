@@ -281,9 +281,12 @@ class VersionTests(Scratch):
             self.assertLess(time.monotonic() - started, 5)
 
     def test_a_probe_cut_short_by_the_caller_is_not_remembered(self):
-        program = write_launcher(self.root, "late", "import time\ntime.sleep(1)\nprint('2.0.0')\n")
-        self.assertIsNone(apps.version(program, timeout=0.2))
-        self.assertEqual(apps.version(program), "2.0.0")
+        program = write_launcher(self.root, "late", "print('2.0.0')\n")
+        with patch.object(proc, "run_sync", side_effect=[
+            TimeoutError("caller deadline"), proc.Result(0,"2.0.0\n","")
+        ]):
+            self.assertIsNone(apps.version(program, timeout=0.2))
+            self.assertEqual(apps.version(program), "2.0.0")
 
     def test_a_probe_that_reaches_the_default_timeout_is_remembered(self):
         program = write_launcher(self.root, "hang", "import time\ntime.sleep(60)\n")
