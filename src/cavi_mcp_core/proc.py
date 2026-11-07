@@ -23,6 +23,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import owned_exec
+
 STDOUT_LIMIT = 16 * 1024 * 1024
 STDERR_LIMIT = 1024 * 1024
 # Seconds between asking a process to stop and killing it.
@@ -134,6 +136,8 @@ async def run(args, timeout: float, *, cwd=None, env=None, stdout_limit: int | N
     ``label`` names the program in the timeout message; it defaults to the file name.
     """
     argv = [str(arg) for arg in args]
+    program = Path(argv[0]).name if argv else "process"
+    argv = owned_exec.command(argv, cwd=cwd, env=env)
     protocol = _Capture(STDOUT_LIMIT if stdout_limit is None else stdout_limit,
                         STDERR_LIMIT if stderr_limit is None else stderr_limit)
     loop = asyncio.get_running_loop()
@@ -148,7 +152,7 @@ async def run(args, timeout: float, *, cwd=None, env=None, stdout_limit: int | N
         except TimeoutError:
             await _stop(transport, protocol, TERM_GRACE if grace is None else grace)
             raise TimeoutError(
-                f"{label or Path(argv[0]).name} exceeded {timeout:g} s and was killed") from None
+                f"{label or program} exceeded {timeout:g} s and was killed") from None
         except asyncio.CancelledError:
             # Shielded so a second cancellation cannot leave the process running.
             await asyncio.shield(_stop(transport, protocol, TERM_GRACE if grace is None else grace))
