@@ -202,14 +202,7 @@ class _Owner:
         self._close()
 
 
-def run(
-    command, *, cwd, env, directory, max_seconds, max_rss_kib, minimum_available_kib, cancel=None
-):
-    """Supervise a command from an unowned resident process using caller-selected limits.
-
-    Admission and the resident process's lifetime belong to the caller. Release a
-    resource only after checking the returned exit status and cleanup_error.
-    """
+def _validate_limits(max_seconds, max_rss_kib, minimum_available_kib):
     if (
         isinstance(max_seconds, bool)
         or not isinstance(max_seconds, (int, float))
@@ -221,6 +214,17 @@ def run(
         or minimum_available_kib < 0
     ):
         raise ValueError("Process supervision requires explicit finite time and memory limits")
+
+
+def run(
+    command, *, cwd, env, directory, max_seconds, max_rss_kib, minimum_available_kib, cancel=None
+):
+    """Supervise a command from an unowned resident process using caller-selected limits.
+
+    Admission and the resident process's lifetime belong to the caller. Release a
+    resource only after checking the returned exit status and cleanup_error.
+    """
+    _validate_limits(max_seconds, max_rss_kib, minimum_available_kib)
     if sys.platform != "darwin" and not sys.platform.startswith("linux"):
         raise ValueError("Process supervision supports Linux and macOS")
     if os.environ.get(gate.OWNER_ENV) or env.get(gate.OWNER_ENV):
