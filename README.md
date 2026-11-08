@@ -160,14 +160,51 @@ fields are normalized without importing unrelated ambient environment values.
 
 The receipt includes `exit_code`, `error`, `cleanup_error`, `registered_groups`,
 `peak_rss_kib` and elapsed `seconds`. Cleanup uncertainty requires retaining the
-resource reservation and records. Admission, detached supervisor lifetime,
-workload inputs and final application reports stay with the consuming adapter;
+resource reservation and records. Admission, workload inputs and final
+application reports stay with the consuming adapter;
 [agent-sessions](https://github.com/cavi-ai/agent-sessions) supplies queue state.
 
 For a neutral Python command with retained records:
 
 ```sh
 uv run --locked python examples/supervised_process.py --out /absolute/new-output
+```
+
+For a lifetime independent of the submitting caller, use `resident.start`:
+
+```python
+from cavi_mcp_core import resident
+
+handle = resident.start(
+    command, cwd=workspace, env=environment, directory=new_record_directory,
+    max_seconds=1800, max_rss_kib=48 * 1024 * 1024,
+    minimum_available_kib=2 * 1024 * 1024,
+)
+result = resident.wait(handle["directory"], timeout=30)
+```
+
+The separate POSIX session uses `supervision.run` and retains the original
+execution deadline after caller loss. It cannot execute a worker until the
+submitting process syncs its handle and acknowledges that exact handle. State
+and supplied environment are private, bounded records; unrelated ambient values
+are not inherited. An existing directory refuses another launch.
+
+Keep the token-free handle or directory to reattach with `resident.inspect`.
+`resident.wait` has its own observation timeout; timeout does not cancel the
+operation. `resident.cancel` writes one attempt-bound cancellation request and
+the resident retires checked processes. Both calls preserve earlier evidence.
+
+A durable result binds the resident PID/birth identity, attempt and sealed input
+hash. `state: finished`
+means the owner recorded a receipt; check `exit_code`, `error` and
+`cleanup_error` before declaring application success or releasing admission.
+Cleanup uncertainty, or owner exit without a result, yields `state: unresolved`.
+A reused PID is never adopted. The consuming adapter keeps its broker
+reservation until cleanup is verified. These APIs cover registered launch sites;
+engine-created helpers do not automatically register.
+
+```sh
+uv run --locked python examples/resident_process.py --out /absolute/new-output
 ```
 
 `processes.inspect`, `processes.group` and `processes.cleanup` expose the same
