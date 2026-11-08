@@ -127,20 +127,48 @@ def group(pgid):
     return result
 
 
-def members(groups, known):
-    result = {}
+def _group_members(pgid, identity, known):
+    leader = inspect(pgid)
+    if leader is not None and (leader["birth"] != identity or leader["pgid"] != pgid):
+        raise ValueError("Registered process identity changed or left its group")
+    rows = group(pgid)
+    anchors = {
+        pgid: identity,
+        **{pid: r["birth"] for pid, r in known.items() if r["pgid"] == pgid},
+    }
+    if rows and not any(anchors.get(pid) == row["birth"] for pid, row in rows.items()):
+        raise ValueError("Process group has no surviving checked identity")
+    return rows
+
+
+def _members(groups, known, scope):
+    result, transfers = {}, {}
     for pgid, identity in groups.items():
-        leader = inspect(pgid)
-        if leader is not None and (leader["birth"] != identity or leader["pgid"] != pgid):
-            raise ValueError("Registered process identity changed or left its group")
-        rows = group(pgid)
-        anchors = {
-            pgid: identity,
-            **{pid: r["birth"] for pid, r in known.items() if r["pgid"] == pgid},
-        }
-        if rows and not any(anchors.get(pid) == row["birth"] for pid, row in rows.items()):
-            raise ValueError("Process group has no surviving checked identity")
-        result.update(rows)
+        result.update(_group_members(pgid, identity, known))
+    # A sampled member can leave its group without going through registration.
+    # Its earlier checked identity remains an obligation, not proof of exit.
+    for pid, previous in known.items():
+        if previous["pgid"] not in groups or pid in result:
+            continue
+        row = inspect(pid)
+        if row is None or row["birth"] != previous["birth"]:
+            continue
+        destination = row["pgid"]
+        if destination != previous["pgid"] and destination in scope:
+            covered = _group_members(destination, scope[destination], known)
+            if covered.get(pid, {}).get("birth") == previous["birth"]:
+                transfers[pid] = covered[pid]
+                continue
+        raise ValueError(
+            f"Previously observed process {pid} ({row['birth']}) remains outside "
+            f"registered group {previous['pgid']}; current group {row['pgid']}"
+        )
+    return result, transfers
+
+
+def members(groups, known):
+    result, transfers = _members(groups, known, groups)
+    result.update(transfers)
     return result
 
 
@@ -150,8 +178,9 @@ def cleanup(groups, *, known=None, seconds=5):
     for number in (signal.SIGTERM, signal.SIGKILL):
         for pgid, identity in list(pending.items()):
             try:
-                rows = members({pgid: identity}, known)
+                rows, transfers = _members({pgid: identity}, known, groups)
                 known.update(rows)
+                known.update(transfers)
                 if not rows:
                     pending.pop(pgid)
                 else:
@@ -175,8 +204,9 @@ def cleanup(groups, *, known=None, seconds=5):
         while pending and time.monotonic() < deadline:
             for pgid, identity in list(pending.items()):
                 try:
-                    rows = members({pgid: identity}, known)
+                    rows, transfers = _members({pgid: identity}, known, groups)
                     known.update(rows)
+                    known.update(transfers)
                     if not rows:
                         pending.pop(pgid)
                 except (OSError, ValueError, subprocess.SubprocessError) as exc:

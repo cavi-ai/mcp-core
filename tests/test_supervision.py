@@ -298,6 +298,81 @@ class SupervisorTests(unittest.TestCase):
             self.assertIsNone(processes.inspect(record["request"]["pid"]))
 
     @supported
+    def test_observed_group_escape_is_retained_in_supervisor_receipt(self):
+        import signal
+        from unittest.mock import patch
+
+        from cavi_mcp_core import processes, supervision
+
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder).resolve()
+            gate, marker = root / "observed", root / "helper.json"
+            helper_code = (
+                "import os,sys,time;from pathlib import Path;"
+                f"gate=Path({str(gate)!r});deadline=time.monotonic()+15;"
+                "\nwhile not gate.exists() and time.monotonic()<deadline:time.sleep(.01)"
+                "\nif not gate.exists():sys.exit(3)"
+                "\nos.setsid();time.sleep(20)"
+            )
+            source = (
+                "import json,subprocess,sys,time;from pathlib import Path;"
+                "from cavi_mcp_core import processes;"
+                f"helper=subprocess.Popen([sys.executable,'-c',{helper_code!r}]);"
+                f"marker=Path({str(marker)!r});"
+                "marker.with_suffix('.tmp').write_text(json.dumps({'pid':helper.pid,'birth':processes.birth(helper.pid)}));"
+                "marker.with_suffix('.tmp').replace(marker);time.sleep(20)"
+            )
+            members, cleanup = processes.members, processes.cleanup
+            observed = {}
+
+            def census(groups, known):
+                rows = members(groups, known)
+                if marker.exists():
+                    pid = json.loads(marker.read_text())["pid"]
+                    if pid in rows and not gate.exists():
+                        observed[pid] = rows[pid]
+                        gate.touch()
+                return rows
+
+            try:
+                with (
+                    patch.object(processes, "members", side_effect=census),
+                    patch.object(
+                        processes,
+                        "cleanup",
+                        side_effect=lambda groups, **kwargs: cleanup(groups, seconds=0.1, **kwargs),
+                    ),
+                ):
+                    result = supervision.run(
+                        [sys.executable, "-c", source],
+                        cwd=root,
+                        env={},
+                        directory=root / "owner",
+                        max_seconds=5,
+                        max_rss_kib=100000,
+                        minimum_available_kib=0,
+                    )
+                self.assertEqual(len(observed), 1)
+                self.assertIn("observed process", result["error"])
+                self.assertIn("observed process", result["cleanup_error"])
+                self.assertIsNone(processes.inspect(result["pid"]))
+                pid, identity = next(iter(observed.items()))
+                self.assertEqual(processes.inspect(pid)["birth"], identity["birth"])
+                self.assertNotIn(pid, result["registered_groups"])
+            finally:
+                if marker.exists():
+                    fixture = json.loads(marker.read_text())
+                    pid = fixture["pid"]
+                    row = processes.inspect(pid)
+                    if row is not None:
+                        self.assertEqual(row["birth"], fixture["birth"])
+                        os.kill(pid, signal.SIGKILL)
+                        deadline = time.monotonic() + 3
+                        while processes.birth(pid) is not None and time.monotonic() < deadline:
+                            time.sleep(0.02)
+                        self.assertIsNone(processes.birth(pid))
+
+    @supported
     def test_failure_to_persist_registration_never_executes_target(self):
         from unittest.mock import patch
 
