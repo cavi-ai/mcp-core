@@ -255,6 +255,146 @@ class ResidentTests(unittest.TestCase):
             self.start()
         self.assertFalse(self.directory.exists())
 
+    def controller_fixture(self):
+        from cavi_mcp_core import journal, owned_exec, processes
+
+        journal.create_directory(self.directory)
+        request = {
+            "version": 1,
+            "attempt": "fixture",
+            "command": [sys.executable, "-c", "pass"],
+            "cwd": str(self.root),
+            "environment": {},
+            "deadline": time.monotonic() + 2,
+            "max_rss_kib": 100000,
+            "minimum_available_kib": 0,
+        }
+        digest = journal.create_json(self.directory / "request.json", request)
+        handle = {
+            "version": 1,
+            "attempt": "fixture",
+            "directory": str(self.directory),
+            "pid": os.getpid(),
+            "birth": processes.birth(os.getpid()),
+            "request_sha256": digest,
+        }
+        journal.create_json(self.directory / "handle.json", handle)
+        self.assertEqual(owned_exec.digest(request), digest)
+        return handle
+
+    def test_publication_sync_failure_requires_observer_durability_verification(self):
+        from cavi_mcp_core import resident
+
+        self.start()
+        resident.wait(self.directory, timeout=10)
+        path = self.directory / "result.json"
+        value = json.loads(path.read_bytes())
+        path.unlink()
+        original = os.fsync
+
+        def fail_after_link(fd):
+            if path.exists():
+                raise OSError("directory sync failed")
+            return original(fd)
+
+        with patch.object(resident.os, "fsync", side_effect=fail_after_link):
+            with self.assertRaises(OSError):
+                resident._publish(self.directory, value)
+            self.assertTrue(path.exists())
+            with self.assertRaises(OSError):
+                resident.inspect(self.directory)
+        self.assertEqual(resident.inspect(self.directory)["state"], "finished")
+
+    def test_delegation_exception_cannot_claim_cleanup_certainty(self):
+        from cavi_mcp_core import resident
+
+        handle = self.controller_fixture()
+        with (
+            patch.object(resident, "_permit", return_value=handle),
+            patch.object(
+                resident.supervision, "run", side_effect=RuntimeError("delegation failed")
+            ),
+        ):
+            resident._run(self.directory, handle["request_sha256"])
+        result = resident.inspect(self.directory)
+        self.assertEqual(result["state"], "unresolved", result)
+        self.assertIn("delegation", result["receipt"]["error"])
+        self.assertIsNotNone(result["receipt"]["cleanup_error"])
+
+    def test_late_finished_inspection_cannot_satisfy_observation_timeout(self):
+        from cavi_mcp_core import resident
+
+        def late(*args, **kwargs):
+            time.sleep(0.02)
+            return {"state": "finished", "receipt": {}}
+
+        with patch.object(resident, "inspect", side_effect=late), self.assertRaises(TimeoutError):
+            resident.wait(self.directory, timeout=0.005)
+
+    def test_native_inspection_timeout_spans_identity_and_inventory(self):
+        from cavi_mcp_core import processes
+
+        def identity(_pid):
+            time.sleep(0.02)
+            return "fixture-birth"
+
+        with (
+            patch.object(processes, "birth", side_effect=identity),
+            patch.object(
+                processes, "_ps", side_effect=AssertionError("expired inventory must not start")
+            ),
+            self.assertRaises(TimeoutError),
+        ):
+            processes.inspect(os.getpid(), timeout=0.005)
+
+    def test_prelaunch_revalidation_consumes_original_execution_budget(self):
+        from cavi_mcp_core import resident
+
+        handle = self.controller_fixture()
+        original = resident._request
+        reads = 0
+
+        def delayed(*args):
+            nonlocal reads
+            reads += 1
+            if reads == 4:
+                time.sleep(0.04)
+            return original(*args)
+
+        observed = {}
+
+        def delegate(*args, **kwargs):
+            observed.update(kwargs)
+            observed["at"] = time.monotonic()
+            return {
+                "pid": None,
+                "exit_code": None,
+                "error": "fixture",
+                "cleanup_error": None,
+                "peak_rss_kib": 0,
+                "seconds": 0,
+                "registered_groups": {},
+            }
+
+        with (
+            patch.object(resident, "_permit", return_value=handle),
+            patch.object(resident, "_request", side_effect=delayed),
+            patch.object(resident.supervision, "run", side_effect=delegate),
+        ):
+            resident._run(self.directory, handle["request_sha256"])
+        deadline = original(self.directory, handle["request_sha256"])["deadline"]
+        self.assertLessEqual(observed["at"] + observed["max_seconds"], deadline + 0.01)
+
+    def test_finished_controller_is_reaped_without_another_api_call(self):
+        handle = self.start()
+        self.until(lambda: (self.directory / "result.json").exists())
+        time.sleep(0.2)
+        try:
+            waited, _status = os.waitpid(handle["pid"], os.WNOHANG)
+        except ChildProcessError:
+            return
+        self.fail(f"unobserved resident was not reaped: {waited}")
+
     def test_submission_death_before_handle_cannot_start_worker(self):
         marker = self.root / "effect"
         caller = subprocess.Popen(

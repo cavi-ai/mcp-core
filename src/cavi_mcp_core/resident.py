@@ -7,6 +7,7 @@ import select
 import stat
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -15,6 +16,8 @@ from . import journal, processes, supervision
 from . import owned_exec as gate
 
 _children = {}
+_reaper = None
+_condition = threading.Condition()
 _HANDLE = {"version", "attempt", "directory", "pid", "birth", "request_sha256"}
 _REQUEST = {
     "version",
@@ -75,10 +78,59 @@ def _handle(directory):
     return value, request
 
 
-def _reap(attempt):
-    child = _children.get(attempt)
-    if child is not None and child.poll() is not None:
-        del _children[attempt]
+def _track(attempt, child):
+    global _reaper
+
+    def reap():
+        global _reaper
+        with _condition:
+            while _children:
+                for key, process in list(_children.items()):
+                    if process.poll() is not None:
+                        del _children[key]
+                if _children:
+                    _condition.wait(0.05)
+            _reaper = None
+
+    with _condition:
+        _children[attempt] = child
+        if _reaper is None:
+            _reaper = threading.Thread(target=reap, daemon=True, name="cavi-resident-reaper")
+            _reaper.start()
+        _condition.notify()
+
+
+def _deadline(timeout):
+    if (
+        isinstance(timeout, bool)
+        or not isinstance(timeout, (int, float))
+        or not math.isfinite(timeout)
+        or timeout <= 0
+    ):
+        raise ValueError("Use a positive finite observation timeout")
+    return time.monotonic() + timeout
+
+
+def _remaining(deadline):
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise TimeoutError("Resident observation timed out; retain its handle")
+    return remaining
+
+
+def _sync_result(directory, path, raw):
+    descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+    descriptor = os.open(directory, os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+    if gate.read_private(path) != raw:
+        raise ValueError("Resident result changed during durability verification")
 
 
 def start(command, *, cwd, env, directory, max_seconds, max_rss_kib, minimum_available_kib):
@@ -137,7 +189,7 @@ def start(command, *, cwd, env, directory, max_seconds, max_rss_kib, minimum_ava
             stdout=log,
             stderr=subprocess.STDOUT,
         )
-    _children[attempt] = child
+    _track(attempt, child)
     try:
         row = processes.inspect(child.pid)
         if row is None or row["pgid"] != child.pid:
@@ -155,18 +207,21 @@ def start(command, *, cwd, env, directory, max_seconds, max_rss_kib, minimum_ava
         child.stdin.flush()
     finally:
         child.stdin.close()
-        _reap(attempt)
     return handle
 
 
-def inspect(directory):
+def inspect(directory, *, timeout=3):
     """Read durable completion, or report running/unresolved using the checked birth identity."""
+    deadline = _deadline(timeout)
     directory = _directory(directory)
     handle, _request_value = _handle(directory)
-    _reap(handle["attempt"])
+    _remaining(deadline)
     path = directory / "result.json"
     if path.exists() or path.is_symlink():
-        result = gate.parse(gate.read_private(path))
+        raw = gate.read_private(path)
+        _sync_result(directory, path, raw)
+        _remaining(deadline)
+        result = gate.parse(raw)
         if (
             not isinstance(result, dict)
             or set(result)
@@ -208,32 +263,27 @@ def inspect(directory):
             or receipt["seconds"] < 0
         ):
             raise ValueError("Invalid resident cleanup receipt")
+        _remaining(deadline)
         return {
             "state": "unresolved" if receipt["cleanup_error"] else "finished",
             "receipt": receipt,
         }
-    row = processes.inspect(handle["pid"])
+    row = processes.inspect(handle["pid"], timeout=_remaining(deadline))
+    _remaining(deadline)
     alive = row is not None and row["birth"] == handle["birth"]
+    if not alive and path.exists():
+        return inspect(directory, timeout=_remaining(deadline))
     return {"state": "running" if alive else "unresolved", "receipt": None}
 
 
 def wait(directory, *, timeout):
     """Wait within a separate observation deadline; timing out never cancels or relaunches."""
-    if (
-        isinstance(timeout, bool)
-        or not isinstance(timeout, (int, float))
-        or not math.isfinite(timeout)
-        or timeout <= 0
-    ):
-        raise ValueError("Use a positive finite observation timeout")
-    deadline = time.monotonic() + timeout
+    deadline = _deadline(timeout)
     while True:
-        value = inspect(directory)
+        value = inspect(directory, timeout=_remaining(deadline))
+        remaining = _remaining(deadline)
         if value["state"] != "running":
             return value
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            raise TimeoutError("Resident observation timed out; retain its handle")
         time.sleep(min(0.05, remaining))
 
 
@@ -305,6 +355,7 @@ def _run(directory, digest):
         "seconds": 0,
         "registered_groups": {},
     }
+    delegated = False
     try:
         permit = _permit(min(request["deadline"], time.monotonic() + 5))
         handle, sealed = _handle(directory)
@@ -322,6 +373,10 @@ def _run(directory, digest):
             raise TimeoutError("Resident deadline expired before worker launch")
         # Recheck exact request bytes before the registered worker can execute.
         _request(directory, digest)
+        remaining = request["deadline"] - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("Resident deadline expired during prelaunch validation")
+        delegated = True
         receipt = supervision.run(
             request["command"],
             cwd=request["cwd"],
@@ -332,8 +387,10 @@ def _run(directory, digest):
             minimum_available_kib=request["minimum_available_kib"],
             cancel=directory / "cancel.json",
         )
-    except Exception as error:  # no worker exists until supervision.run owns cleanup
+    except Exception as error:
         receipt["error"] = str(error) or type(error).__name__
+        if delegated:
+            receipt["cleanup_error"] = "Supervision failed without a verified cleanup receipt"
     check_owner()
     _publish(
         directory,

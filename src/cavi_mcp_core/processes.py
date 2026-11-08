@@ -1,5 +1,6 @@
 """Checked identities and cleanup for explicitly registered POSIX groups."""
 
+import math
 import os
 import re
 import signal
@@ -28,12 +29,12 @@ def birth(pid):
     raise OSError("Native supervision supports Linux and macOS only")
 
 
-def _ps(*args):
+def _ps(*args, timeout=3):
     result = subprocess.run(
         ["ps", *args],
         capture_output=True,
         text=True,
-        timeout=3,
+        timeout=timeout,
         check=False,
         env={**os.environ, "LC_ALL": "C"},
     )
@@ -66,19 +67,39 @@ def available_kib():
     raise OSError("Cannot establish available host memory")
 
 
-def inspect(pid):
+def inspect(pid, *, timeout=3):
+    if (
+        isinstance(timeout, bool)
+        or not isinstance(timeout, (int, float))
+        or not math.isfinite(timeout)
+        or timeout <= 0
+    ):
+        raise ValueError("Use a positive finite process inspection timeout")
+    deadline = time.monotonic() + timeout
+
+    def remaining():
+        value = deadline - time.monotonic()
+        if value <= 0:
+            raise TimeoutError("Process inspection timed out")
+        return value
+
     identity = birth(pid)
+    remaining()
     if identity is None:
         return None
-    text = _ps("-p", str(pid), "-o", "ppid=,pgid=,rss=")
+    text = _ps("-p", str(pid), "-o", "ppid=,pgid=,rss=", timeout=remaining())
+    remaining()
     if not text.strip():
-        if birth(pid) is None:
+        vanished = birth(pid) is None
+        remaining()
+        if vanished:
             return None
         raise OSError("Process disappeared from its inventory")
     fields = text.split()
     if len(fields) != 3 or any(not f.isdecimal() for f in fields):
         raise OSError("Invalid process inventory")
     after = birth(pid)
+    remaining()
     if after is None:
         return None
     if after != identity:

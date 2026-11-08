@@ -195,8 +195,8 @@ operation. `resident.cancel` writes one attempt-bound cancellation request and
 the resident retires checked processes. Both calls preserve earlier evidence.
 
 A durable result binds the resident PID/birth identity, attempt and sealed input
-hash. `state: finished`
-means the owner recorded a receipt; check `exit_code`, `error` and
+hash. Observers sync the receipt and its directory before accepting completion.
+`state: finished` means the owner recorded a receipt; check `exit_code`, `error` and
 `cleanup_error` before declaring application success or releasing admission.
 Cleanup uncertainty, or owner exit without a result, yields `state: unresolved`.
 A reused PID is never adopted. The consuming adapter keeps its broker
