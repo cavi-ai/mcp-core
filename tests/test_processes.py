@@ -177,6 +177,7 @@ class KnownMemberTests(unittest.TestCase):
             patch.object(
                 processes, "birth", side_effect=lambda pid: live.get(pid, {}).get("birth")
             ),
+            patch.object(processes.os, "getpgid", side_effect=lambda pid: live[pid]["pgid"]),
             patch.object(processes, "group", return_value={}),
             patch.object(processes.os, "killpg") as stop,
             self.assertRaisesRegex(RuntimeError, "identity"),
