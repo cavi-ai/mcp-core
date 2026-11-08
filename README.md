@@ -208,7 +208,18 @@ uv run --locked python examples/resident_process.py --out /absolute/new-output
 ```
 
 `processes.inspect`, `processes.group` and `processes.cleanup` expose the same
-checked identity/group operations for consuming adapters. `journal.create_json`
+checked identity/group operations for consuming adapters. With `known` identities,
+`processes.members` also rechecks previously observed processes missing from the
+current groups.
+If the same process is still alive outside the checked inventory, sampling and
+cleanup refuse a clear result. The error records its PID, birth identity and
+previous/current groups; retain the reservation and records for inspection.
+Unregistered groups are not adopted or signalled. Movement into another registered
+group remains covered after identity checks. An exited or reused PID does not
+transfer ownership. Helpers never observed by the owner still require an audited
+registration path or separate containment.
+
+`journal.create_json`
 creates an exclusive private record, syncs its file and directory, and returns
 its exact-byte SHA-256. Existing records are preserved. `journal.create_directory`
 durably links new private directories and any missing parents.
