@@ -224,6 +224,31 @@ creates an exclusive private record, syncs its file and directory, and returns
 its exact-byte SHA-256. Existing records are preserved. `journal.create_directory`
 durably links new private directories and any missing parents.
 
+### Helper retirement before publication
+
+A registered root worker can ask its independent owner to close helper execution
+before publishing a report or releasing broker admission:
+
+```python
+from cavi_mcp_core import retirement
+
+proof = retirement.close(timeout=15)
+if proof["cleanup_error"] is not None:
+    raise RuntimeError(proof["cleanup_error"])
+# Retain proof["path"] and proof["sha256"] with the consuming adapter's evidence.
+```
+
+The owner denies further helper launches before cleanup, retires registered helper
+groups and rechecks its previously observed identities. The root worker remains
+alive for publication. The private receipt binds its attempt, PID/birth identity,
+request and group identities; it is synced before acknowledgment. Repeating the
+same root request returns the same receipt without repeating cleanup.
+
+Timeouts, missing receipts and non-null `cleanup_error` retain admission. Socket
+peer checks prevent another helper from retiring the root's scope. Helpers that
+detached before any observation remain outside this proof. Broker policy and
+application acceptance remain with the consuming adapter.
+
 ### Process inspection
 
 On macOS, `sampling` reads process census, checked birth identities, descendant RSS

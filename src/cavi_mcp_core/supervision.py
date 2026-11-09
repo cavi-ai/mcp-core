@@ -11,7 +11,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from contextlib import ExitStack
+from contextlib import ExitStack, suppress
 from pathlib import Path
 
 from . import owned_exec as gate
@@ -63,6 +63,7 @@ class _Owner:
             self.command, self.cwd = list(map(str, command)), str(Path(cwd).resolve())
             self.groups, self.known, self.ids = {}, {}, set()
             self.root_pid = None
+            self.retiring, self.retirement = False, None
             self.deadline = math.inf
             self._close = resources.pop_all().close
 
@@ -196,7 +197,18 @@ class _Owner:
                 raise ValueError("Process registration peer identity is unavailable")
             if not isinstance(frame["request"], dict) or frame["request"].get("pid") != peer:
                 raise ValueError("Process registration differs from its socket peer")
-            channel.sendall(gate.encoded(self.register(frame["request"])))
+            from . import retirement
+
+            if frame["request"].get("kind") == retirement.KIND:
+                reply = retirement._retire(self, frame["request"])
+                # Cleanup is already durable; the root may retry a lost reply.
+                with suppress(OSError):
+                    channel.sendall(gate.encoded(reply))
+            elif self.retiring:
+                with suppress(OSError):
+                    channel.sendall(gate.encoded({"launch_permitted": False}))
+            else:
+                channel.sendall(gate.encoded(self.register(frame["request"])))
 
     def close(self):
         self._close()
