@@ -4,6 +4,15 @@ Versions come from git tags; a pull request adds its lines under Unreleased and 
 
 ## Unreleased
 
+## 0.1.3 - 2026-11-09
+
+### Added
+
+- Register owned subprocess launches before execution and retain process identities for cleanup.
+- Supervise resident workers with durable completion and helper-retirement receipts.
+- Inspect process resource use, sample stacks, and clean up only matching observed processes.
+- Create operation-journal records without overwriting an existing record.
+
 ## 0.1.2 - 2026-11-06
 
 ### Changed
