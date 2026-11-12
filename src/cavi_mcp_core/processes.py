@@ -9,6 +9,9 @@ import sys
 import time
 from pathlib import Path
 
+# One process sample may take this long; a busy host answers a full census in seconds.
+SAMPLE_SECONDS = 10
+
 
 def birth(pid):
     if sys.platform.startswith("linux"):
@@ -29,7 +32,7 @@ def birth(pid):
     raise OSError("Native supervision supports Linux and macOS only")
 
 
-def _ps(*args, timeout=3):
+def _ps(*args, timeout=SAMPLE_SECONDS):
     result = subprocess.run(
         ["ps", *args],
         capture_output=True,
@@ -67,7 +70,7 @@ def available_kib():
     raise OSError("Cannot establish available host memory")
 
 
-def inspect(pid, *, timeout=3):
+def inspect(pid, *, timeout=SAMPLE_SECONDS):
     if (
         isinstance(timeout, bool)
         or not isinstance(timeout, (int, float))

@@ -10,6 +10,8 @@ import sys
 import threading
 import time
 
+from .processes import SAMPLE_SECONDS
+
 
 class _ProcBsdInfo(ctypes.Structure):
     _fields_ = [
@@ -343,8 +345,8 @@ class _BoundedSampler:
             finally:
                 done.set()
 
-    def call(self, operation, argument, timeout=2):
-        deadline = time.monotonic() + min(2, timeout)
+    def call(self, operation, argument, timeout=SAMPLE_SECONDS):
+        deadline = time.monotonic() + min(SAMPLE_SECONDS, timeout)
         if not math.isfinite(timeout) or timeout <= 0:
             raise TimeoutError("The native process sample has no time remaining.")
         if not self.lock.acquire(timeout=max(0, deadline - time.monotonic())):
@@ -415,7 +417,7 @@ def _deadline(timeout):
         raise ValueError("Use a finite positive process-sampling budget.")
     if not math.isfinite(timeout) or timeout <= 0:
         raise TimeoutError("The native process sample has no time remaining.")
-    return time.monotonic() + min(2, timeout)
+    return time.monotonic() + min(SAMPLE_SECONDS, timeout)
 
 
 def _pid(pid):
@@ -424,7 +426,7 @@ def _pid(pid):
     return pid
 
 
-def inventory(timeout=2):
+def inventory(timeout=SAMPLE_SECONDS):
     """Read a complete PID/parent/kernel-name census without sampling unrelated RSS."""
     deadline = _deadline(timeout)
     global _darwin_inventory_sampler
@@ -439,7 +441,7 @@ def inventory(timeout=2):
     return result
 
 
-def tree(pid, timeout=2, *, children=None):
+def tree(pid, timeout=SAMPLE_SECONDS, *, children=None):
     """Sample checked descendants; supplied discovery never bypasses parent checks."""
     deadline = _deadline(timeout)
     _pid(pid)
@@ -464,7 +466,7 @@ def _descriptor_sampler():
     return _darwin_descriptor_sampler
 
 
-def identities(pids, timeout=2):
+def identities(pids, timeout=SAMPLE_SECONDS):
     """Read checked birth identities independently of census and RSS workers."""
     deadline = _deadline(timeout)
     pids = tuple(_pid(pid) for pid in pids)
@@ -473,13 +475,13 @@ def identities(pids, timeout=2):
     return result
 
 
-def birth(pid, timeout=2):
+def birth(pid, timeout=SAMPLE_SECONDS):
     """Return Core's Darwin birth token, or None for an exited process."""
     identity = identities([pid], timeout=timeout).get(pid)
     return None if identity is None else "darwin:" + identity
 
 
-def socket_count(pid, timeout=2):
+def socket_count(pid, timeout=SAMPLE_SECONDS):
     """Count open socket descriptors within the caller's bounded budget."""
     deadline = _deadline(timeout)
     _pid(pid)

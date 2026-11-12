@@ -4,6 +4,10 @@ Versions come from git tags; a pull request adds its lines under Unreleased and 
 
 ## Unreleased
 
+### Changed
+
+- Process sampling and `ps` inventories allow 10 seconds, so supervision keeps working on a busy host.
+
 ## 0.1.3 - 2026-11-09
 
 ### Added
