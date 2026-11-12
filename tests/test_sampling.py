@@ -206,7 +206,7 @@ class DarwinInventoryTests(unittest.TestCase):
         sampler = Mock()
 
         def call(*args, **kwargs):
-            now[0] = 2.01
+            now[0] = 10.01
             return {101: (1, "Unity")}
 
         sampler.call.side_effect = call
@@ -216,8 +216,24 @@ class DarwinInventoryTests(unittest.TestCase):
             patch.object(sampling.time, "monotonic", side_effect=lambda: now[0]),
             self.assertRaises(TimeoutError),
         ):
-            sampling.inventory(timeout=3)
-        sampler.call.assert_called_once_with("inventory", None, timeout=2)
+            sampling.inventory(timeout=30)
+        sampler.call.assert_called_once_with("inventory", None, timeout=10)
+
+    def test_inventory_accepts_a_census_that_takes_seconds_on_a_busy_host(self):
+        now = [0.0]
+        sampler = Mock()
+
+        def call(*args, **kwargs):
+            now[0] = 5.0
+            return {101: (1, "Unity")}
+
+        sampler.call.side_effect = call
+        with (
+            patch.object(sampling.sys, "platform", "darwin"),
+            patch.object(sampling, "_darwin_inventory_sampler", sampler),
+            patch.object(sampling.time, "monotonic", side_effect=lambda: now[0]),
+        ):
+            self.assertEqual(sampling.inventory(), {101: (1, "Unity")})
 
     def test_census_timeout_does_not_poison_owned_identity_cleanup(self):
         release = threading.Event()
