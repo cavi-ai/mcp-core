@@ -12,6 +12,10 @@ Versions come from git tags; a pull request adds its lines under Unreleased and 
 
 - Process sampling and `ps` inventories allow 10 seconds, so supervision keeps working on a busy host.
 
+### Fixed
+
+- A tool whose `Result` fails validation reports an unknown outcome instead of a rejected argument, since the tool may already have acted.
+
 ## 0.1.3 - 2026-11-09
 
 ### Added
