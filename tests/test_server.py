@@ -5,6 +5,7 @@ from importlib.metadata import version
 from mcp import Client
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.mcpserver.tools.base import Tool
+from pydantic import BaseModel
 
 from cavi_mcp_core.contracts import OperationRejected, Result, failure
 from cavi_mcp_core.server import (
@@ -88,6 +89,31 @@ class ServerTests(unittest.TestCase):
         self.assertTrue(result.is_error)
         self.assertNotIn("internal detail", result.content[0].text)
         self.assertEqual(result.structured_content["error"]["outcome"], "unknown")
+
+    def test_a_result_that_breaks_its_contract_is_an_unknown_outcome(self):
+        mcp = Server("demo", version="1")
+        written = []
+
+        class Recipe(BaseModel):
+            count: int
+
+        @mcp.tool(annotations=WRITES)
+        async def save(text: str) -> Echo:
+            written.append(text)
+            return Echo(text=len(text))
+
+        @mcp.tool(annotations=WRITES)
+        async def plan(recipe: dict) -> Echo:
+            return Echo(text=str(Recipe.model_validate(recipe).count))
+
+        with self.assertLogs("cavi_mcp_core.server", "ERROR"):
+            result = call(mcp, "save", {"text": "hi"})
+        self.assertEqual(written, ["hi"])
+        error = result.structured_content["error"]
+        self.assertEqual((error["code"], error["outcome"], error["next_action"]),
+                         ("OUTCOME_UNKNOWN", "unknown", "inspect_application_and_outputs"))
+        error = call(mcp, "plan", {"recipe": {"count": "many"}}).structured_content["error"]
+        self.assertEqual((error["code"], error["outcome"]), ("INVALID_ARGUMENT", "rejected"))
 
     def test_unknown_tools_are_rejected_with_a_recovery_hint(self):
         mcp, _ = build()

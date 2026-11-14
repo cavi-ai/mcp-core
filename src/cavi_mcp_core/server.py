@@ -8,8 +8,9 @@ from importlib.metadata import version
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError, UnexpectedToolError
 from mcp.types import ToolAnnotations
+from pydantic import ValidationError
 
-from .contracts import UnknownToolError, failure
+from .contracts import Result, UnknownToolError, failure
 from .schema import compact_schema
 
 # Failures a caller can act on: invalid arguments, refused paths, an application that is
@@ -48,8 +49,22 @@ def reject_foreign(action: str, given: dict, allowed: set | frozenset) -> None:
         raise ValueError(f"Not valid for action={action}: {', '.join(foreign)}")
 
 
+def _result_titles() -> set[str]:
+    """The validation-error titles of every ``Result`` model defined so far."""
+    titles, pending = set(), [Result]
+    while pending:
+        for model in pending.pop().__subclasses__():
+            titles.update({model.__name__, model.model_config.get("title") or model.__name__})
+            pending.append(model)
+    return titles
+
+
 def report_anticipated(fn, anticipated=ANTICIPATED):
-    """``fn`` with ``anticipated`` exceptions re-raised as ToolError, keeping their text."""
+    """``fn`` with ``anticipated`` exceptions re-raised as ToolError, keeping their text.
+
+    A ``Result`` that fails its own validation is a defect, and the tool may already have
+    acted, so it is reported like any other defect: logged, with an unknown outcome.
+    """
 
     @functools.wraps(fn)
     async def tool(*args, **kwargs):
@@ -58,6 +73,8 @@ def report_anticipated(fn, anticipated=ANTICIPATED):
         except ToolError:
             raise
         except anticipated as exc:
+            if isinstance(exc, ValidationError) and exc.title in _result_titles():
+                raise
             raise ToolError(str(exc)) from exc
 
     return tool
