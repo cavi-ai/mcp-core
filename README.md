@@ -288,6 +288,21 @@ the newest matching bundle under `/Applications`; it raises `AppUnavailable` or
 running it, `apps.running` asks whether an executable has a process, and
 `apps.processes` lists the processes of one executable on macOS.
 
+## Workspaces
+
+`workspace.root(env, explicit=None, *, default=None, create=False)` returns the resolved
+workspace root: `explicit`, else the environment variable `env`, else `default`. The
+variable must hold an absolute path; with no `default` it is required. With `create` the
+default is made on first use, and a root chosen by argument or variable must already be
+a directory. `workspace.existing_root` resolves a root that must exist and never creates
+it.
+
+`workspace.input_file(root, name, extensions)` resolves an existing file with a supported
+suffix inside the root, following symbolic links before the check.
+`workspace.output_path` validates a new output directory inside the root without creating
+it, and `workspace.new_output_dir` creates it. `workspace.rel` gives a path relative to
+the root with forward slashes. The module uses the standard library only.
+
 ## Files and journals
 
 `files.inside(workspace, path)` resolves a path inside an existing workspace and refuses
