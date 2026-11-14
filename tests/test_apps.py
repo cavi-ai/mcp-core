@@ -382,8 +382,9 @@ class RunningPosixTests(Scratch):
         self.assertFalse(apps.running(program))
 
     def test_a_process_naming_a_binary_as_an_option_value_does_not_count(self):
-        # A link, not a copy: macOS kills copies of its own signed binaries.
-        program = self.root / "app" / "Thing"
+        # A link, not a copy: macOS kills copies of its own signed binaries. The link keeps
+        # the binary's name, because a multi-call coreutils refuses to run under another.
+        program = self.root / "app" / "sleep"
         program.parent.mkdir()
         program.symlink_to(shutil.which("sleep"))
         broker = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)",
