@@ -1,0 +1,35 @@
+name: Feature request
+description: A contract or helper the servers need and the library does not provide yet
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What a server cannot do, or does in its own copy, today
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: Proposed module, function or contract change
+    validations:
+      required: true
+
+  - type: textarea
+    id: servers
+    attributes:
+      label: Servers
+      description: The servers that would use it
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope
+      options:
+        - label: This changes a result or error contract every server returns
+        - label: This adds a dependency to the package

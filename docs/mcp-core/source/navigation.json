@@ -1,0 +1,47 @@
+{
+  "title": "MCP Core",
+  "version": "{{PRODUCT_VERSION}}",
+  "sections": [
+    {
+      "title": "Introduction",
+      "pages": [
+        { "title": "Overview", "path": "introduction/overview.md" },
+        { "title": "Installation", "path": "introduction/installation.md" },
+        { "title": "Quickstart", "path": "introduction/quickstart.md" }
+      ]
+    },
+    {
+      "title": "Guides",
+      "pages": [
+        { "title": "Write a server", "path": "guides/writing-a-server.md" },
+        { "title": "Workspaces", "path": "guides/workspaces.md" },
+        { "title": "Files and journals", "path": "guides/files-and-journals.md" },
+        { "title": "Applications", "path": "guides/applications.md" },
+        { "title": "Processes", "path": "guides/processes.md" },
+        { "title": "Process supervision", "path": "guides/supervision.md" },
+        { "title": "Process inspection", "path": "guides/process-inspection.md" }
+      ]
+    },
+    {
+      "title": "Reference",
+      "pages": [
+        { "title": "Results and errors", "path": "reference/results-and-errors.md" },
+        { "title": "Schemas", "path": "reference/schemas.md" },
+        { "title": "Configuration", "path": "reference/configuration.md" },
+        { "title": "Testing", "path": "reference/testing.md" }
+      ]
+    },
+    {
+      "title": "Security",
+      "pages": [
+        { "title": "Security model", "path": "security/model.md" }
+      ]
+    },
+    {
+      "title": "Release",
+      "pages": [
+        { "title": "Version and support", "path": "release/version-and-support.md" }
+      ]
+    }
+  ]
+}

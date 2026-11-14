@@ -7,6 +7,7 @@ Versions come from git tags; a pull request adds its lines under Unreleased and 
 ### Added
 
 - `workspace` resolves a server's workspace root from its environment variable and confines input files and new output directories to it.
+- Documentation in `docs/mcp-core/source`, built and verified in CI and published with each release; the results and errors reference is the contract every server links to.
 
 ### Changed
 

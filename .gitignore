@@ -6,6 +6,8 @@ dist/
 build/
 *.egg-info/
 .tmp/
+.quarantine/
 .worktrees/
+/docs/mcp-core/v*/
 .DS_Store
 node_modules/
