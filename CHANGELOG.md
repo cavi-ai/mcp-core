@@ -4,6 +4,10 @@ Versions come from git tags; a pull request adds its lines under Unreleased and 
 
 ## Unreleased
 
+### Added
+
+- `workspace` resolves a server's workspace root from its environment variable and confines input files and new output directories to it.
+
 ### Changed
 
 - Process sampling and `ps` inventories allow 10 seconds, so supervision keeps working on a busy host.
