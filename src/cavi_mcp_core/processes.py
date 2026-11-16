@@ -17,7 +17,7 @@ def birth(pid):
     if sys.platform.startswith("linux"):
         try:
             fields = Path(f"/proc/{pid}/stat").read_text().rpartition(")")[2].split()
-        except FileNotFoundError:
+        except (FileNotFoundError, ProcessLookupError):
             return None
         if len(fields) < 20:
             raise OSError("Incomplete process identity")
