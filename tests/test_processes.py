@@ -10,6 +10,17 @@ import unittest
 from unittest.mock import patch
 
 
+class ProcessIdentityTests(unittest.TestCase):
+    def test_linux_birth_returns_none_when_process_exits_during_proc_read(self):
+        from cavi_mcp_core import processes
+
+        with (
+            patch.object(processes.sys, "platform", "linux"),
+            patch.object(processes.Path, "read_text", side_effect=ProcessLookupError),
+        ):
+            self.assertIsNone(processes.birth(101))
+
+
 class KnownMemberTests(unittest.TestCase):
     def rows(self):
         root = {"pid": 101, "pgid": 101, "parent_pid": 1, "birth": "root", "rss_kib": 1}
