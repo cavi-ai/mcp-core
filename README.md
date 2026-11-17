@@ -1,15 +1,12 @@
 # Cavi MCP Core
 
-[![PyPI version](https://img.shields.io/pypi/v/cavi-mcp-core)](https://pypi.org/project/cavi-mcp-core/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+![A beaver supports a workbench while a hedgehog builds a clockwork dragonfly](assets/mcp-core-hero.png)
 
-The Python library the Cavi MCP servers are built on: one server type with compact schemas and one
-structured failure for every tool error, strict result models, workspace path rules, bounded files and
-processes, and an operation journal. [Blender MCP](https://github.com/cavi-ai/blender-mcp),
-[Substance MCP](https://github.com/cavi-ai/substance-mcp),
-[Houdini MCP](https://github.com/cavi-ai/houdini-mcp), [Adobe MCP](https://github.com/cavi-ai/adobe-mcp),
-[Premiere MCP](https://github.com/cavi-ai/premiere-mcp) and
-[After Effects MCP](https://github.com/cavi-ai/after-effects-mcp) depend on it.
+## Build the interesting part.
+
+Build your application's tools on a shared foundation. Cavi MCP Core extends the Python MCP server with typed result and error contracts, workspace and file utilities, and bounded process handling, so you can spend more time on what your tools do.
+
+[![PyPI version](https://img.shields.io/pypi/v/cavi-mcp-core)](https://pypi.org/project/cavi-mcp-core/) [![PyPI weekly downloads](https://img.shields.io/pypi/dw/cavi-mcp-core?label=PyPI%20downloads%2Fweek)](https://pypi.org/project/cavi-mcp-core/) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ## Install
 
@@ -46,7 +43,16 @@ From a checkout, `uv run --locked python examples/inspect_status.py` starts the 
 stdio, calls `status` and prints `{"ready": true}`. The
 [quickstart](docs/mcp-core/source/pages/introduction/quickstart.md) walks through it.
 
-## What it provides
+## Shared foundations
+
+- Give tool callers consistent typed results and structured failures.
+- Work with workspace paths, bounded files and private operation records.
+- Run and supervise local processes with bounded output and deadlines.
+
+Blender MCP, Substance MCP, Houdini MCP, Adobe MCP, Premiere MCP and After Effects MCP depend on Core.
+
+<details>
+<summary>Module reference</summary>
 
 | Module | What it provides |
 |---|---|
@@ -66,6 +72,8 @@ stdio, calls `status` and prints `{"ready": true}`. The
 | `retirement` | Helper cleanup before a worker publishes. |
 | `processes` | Checked process identities and group cleanup. |
 | `sampling` | Read-only macOS process census, identities and RSS. |
+
+</details>
 
 ## Results and errors
 
@@ -116,20 +124,6 @@ uses the library.
 The library opens no network port, sends no telemetry and uses no accounts. Tool arguments are closed,
 paths are confined to the workspace, and an unexpected exception keeps its details on the server. See
 the [security model](docs/mcp-core/source/pages/security/model.md) and [SECURITY.md](SECURITY.md).
-
-## Tests
-
-```sh
-uv sync --locked --dev
-uv run --locked ruff check .
-uv run --locked python -m unittest discover -s tests
-npm install --no-audit --no-fund --package-lock=false
-npm run eval:protocol
-```
-
-The tests also fail when this README's module table and the package differ, and when the error codes in
-the results and errors reference and the codes a client receives differ. `eval:protocol` runs a
-representative stdio server with MCP Eval.
 
 ## Contributing
 
