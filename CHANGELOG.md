@@ -4,6 +4,8 @@ Versions come from git tags; a pull request adds its lines under Unreleased and 
 
 ## Unreleased
 
+## 0.1.4 - 2026-11-16
+
 ### Added
 
 - `media` writes and checks animation frame receipts and runs one bounded command into a new directory; install `cavi-mcp-core[media]` for Pillow.
