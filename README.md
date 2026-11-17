@@ -57,6 +57,7 @@ stdio, calls `status` and prints `{"ready": true}`. The
 | `workspace` | The workspace root and the input and output path rules. |
 | `files` | Workspace-confined, bounded file reads and JSON parsing. |
 | `journal` | Atomic private JSON records and completion receipts. |
+| `media` | Animation frame receipts and the bounded command that fills one. Needs `cavi-mcp-core[media]`. |
 | `apps` | Installed application discovery, versions and running processes. |
 | `proc` | Bounded subprocesses that stop the whole process group. |
 | `owned_exec` | Launch registration with a process owner. |
