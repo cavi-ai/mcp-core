@@ -12,6 +12,8 @@
 uv add cavi-mcp-core
 ```
 
+The `media` module reads PNG frames with Pillow; add it with `uv add "cavi-mcp-core[media]"`.
+
 The package has no command of its own. Import its modules from your server:
 
 ```python

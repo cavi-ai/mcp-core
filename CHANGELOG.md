@@ -6,6 +6,7 @@ Versions come from git tags; a pull request adds its lines under Unreleased and 
 
 ### Added
 
+- `media` writes and checks animation frame receipts and runs one bounded command into a new directory; install `cavi-mcp-core[media]` for Pillow.
 - `workspace` resolves a server's workspace root from its environment variable and confines input files and new output directories to it.
 - Documentation in `docs/mcp-core/source`, built and verified in CI and published with each release; the results and errors reference is the contract every server links to.
 

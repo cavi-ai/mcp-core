@@ -24,6 +24,9 @@ classifiers = [
 requires-python = ">=3.15"
 dependencies = ["mcp>=2.3,<3", "pydantic>=2.11,<3"]
 
+[project.optional-dependencies]
+media = ["pillow>=13.0,<14"]
+
 [project.urls]
 Homepage = "https://github.com/cavi-ai/mcp-core#readme"
 Repository = "https://github.com/cavi-ai/mcp-core"
@@ -31,7 +34,7 @@ Issues = "https://github.com/cavi-ai/mcp-core/issues"
 Changelog = "https://github.com/cavi-ai/mcp-core/blob/main/CHANGELOG.md"
 
 [dependency-groups]
-dev = ["jsonschema>=4.26,<5", "ruff>=0.14,<1"]
+dev = ["jsonschema>=4.26,<5", "pillow>=13.0,<14", "ruff>=0.14,<1"]
 
 # The version comes from the git tag: vX.Y.Z builds X.Y.Z, later commits X.Y.(Z+1).devN+g<sha>.
 [tool.hatch.version]
