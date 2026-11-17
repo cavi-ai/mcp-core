@@ -1,6 +1,6 @@
 # Cavi MCP Core
 
-![A beaver supports a workbench while a hedgehog builds a clockwork dragonfly](assets/mcp-core-hero.png)
+![A beaver supports a workbench while a hedgehog builds a clockwork dragonfly](https://raw.githubusercontent.com/cavi-ai/mcp-core/main/assets/mcp-core-hero.png)
 
 ## Build the interesting part.
 
