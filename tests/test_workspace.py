@@ -1,6 +1,10 @@
+import asyncio
 import os
+import shutil
+import stat
 import tempfile
 import unittest
+import warnings
 from pathlib import Path
 from unittest.mock import patch
 
@@ -230,6 +234,165 @@ class PathRuleTests(unittest.TestCase):
         self.assertEqual(workspace.rel(self.root, self.root / "maps" / "a.png"), "maps/a.png")
         with self.assertRaises(ValueError):
             workspace.rel(self.root, self.outside / "secret.png")
+
+
+def refuse_read_only_unlink(name):
+    """``os.unlink`` that refuses ``name`` while its write bit is clear, as Windows does for
+    a read-only file and on every platform, root included."""
+    real = os.unlink
+
+    def unlink(path, *args, dir_fd=None, **kwargs):
+        if os.path.basename(str(path)) == name and not (
+                os.stat(path, dir_fd=dir_fd).st_mode & stat.S_IWUSR):
+            raise PermissionError(13, "read-only file", str(path))
+        return real(path, *args, dir_fd=dir_fd, **kwargs)
+
+    return patch.object(os, "unlink", unlink)
+
+
+class RemoveTreeTests(unittest.TestCase):
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.tree = Path(folder.name) / "tree"
+        (self.tree / "a/b").mkdir(parents=True)
+        (self.tree / "a/b/file.txt").write_text("x")
+        (self.tree / "top.txt").write_text("x")
+
+    def test_removes_the_tree_and_reports_nothing_left(self):
+        self.assertEqual(workspace.remove_tree(self.tree), [])
+        self.assertFalse(self.tree.exists())
+
+    def test_accepts_text_paths_and_missing_paths(self):
+        self.assertEqual(workspace.remove_tree(str(self.tree)), [])
+        self.assertEqual(workspace.remove_tree(self.tree), [])
+
+    def test_reports_everything_that_could_not_be_removed(self):
+        with patch.object(shutil, "rmtree"):
+            left = workspace.remove_tree(self.tree)
+        self.assertEqual(left[-1], str(self.tree))
+        self.assertEqual(
+            set(left),
+            {str(self.tree), str(self.tree / "a"), str(self.tree / "a/b"),
+             str(self.tree / "a/b/file.txt"), str(self.tree / "top.txt")},
+        )
+        self.assertEqual(left[:-1], sorted(left[:-1], reverse=True))
+
+    def test_a_read_only_file_does_not_stop_removal(self):
+        (self.tree / "top.txt").chmod(stat.S_IREAD)
+        with refuse_read_only_unlink("top.txt"):
+            self.assertEqual(workspace.remove_tree(self.tree), [])
+        self.assertFalse(self.tree.exists())
+
+    def test_without_the_unlock_handler_that_file_would_be_left_behind(self):
+        target = self.tree / "top.txt"
+        target.chmod(stat.S_IREAD)
+        with refuse_read_only_unlink("top.txt"):
+            shutil.rmtree(self.tree, ignore_errors=True)
+        self.assertTrue(target.exists(), "the emulation no longer reproduces the failure")
+
+    def test_the_unlock_handler_never_touches_the_parent_of_the_tree(self):
+        parent = self.tree.parent
+        before = stat.S_IMODE(parent.stat().st_mode)
+        workspace._unlock(self.tree)(lambda path: None, str(self.tree), PermissionError())
+        self.assertEqual(stat.S_IMODE(parent.stat().st_mode), before)
+
+
+class NewOutputDirectoryTests(unittest.TestCase):
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.root = Path(folder.name).resolve()
+
+    def test_keeps_the_directory_when_the_body_succeeds(self):
+        with workspace.new_output_directory(self.root, "out") as made:
+            self.assertEqual(made, self.root / "out")
+            (made / "file.txt").write_text("x")
+        self.assertEqual((self.root / "out/file.txt").read_text(), "x")
+
+    def test_removes_the_directory_and_its_content_when_the_body_raises(self):
+        for error in (RuntimeError("boom"), KeyboardInterrupt(), asyncio.CancelledError()):
+            with self.subTest(error=type(error).__name__):
+                with self.assertRaises(type(error)) as caught, \
+                        workspace.new_output_directory(self.root, "out") as made:
+                    (made / "sub").mkdir()
+                    (made / "sub/file.txt").write_text("x")
+                    raise error
+                self.assertIs(caught.exception, error)
+                self.assertFalse((self.root / "out").exists())
+
+    def test_never_touches_a_directory_that_already_exists(self):
+        (self.root / "used").mkdir()
+        (self.root / "used/keep.txt").write_text("x")
+        with self.assertRaises(FileExistsError), \
+                workspace.new_output_directory(self.root, "used"):
+            self.fail("the body must not run")
+        self.assertEqual((self.root / "used/keep.txt").read_text(), "x")
+
+    def test_applies_the_output_rules(self):
+        with self.assertRaisesRegex(ValueError, "inside the workspace"), \
+                workspace.new_output_directory(self.root, "../escape"):
+            self.fail("the body must not run")
+
+    def test_can_create_missing_parents(self):
+        with workspace.new_output_directory(self.root, "a/b", parents=True) as made:
+            self.assertEqual(made, self.root / "a/b")
+        self.assertTrue((self.root / "a/b").is_dir())
+
+    def test_leftovers_are_named_in_the_error(self):
+        with patch.object(shutil, "rmtree"), \
+                self.assertRaises(RuntimeError) as caught, \
+                workspace.new_output_directory(self.root, "out") as made:
+            (made / "partial.png").write_text("x")
+            raise ValueError("cook failed")
+        message = str(caught.exception)
+        self.assertIn("ValueError: cook failed", message)
+        self.assertIn("could not remove the incomplete output", message)
+        self.assertIn(str(self.root / "out/partial.png"), message)
+        self.assertIsInstance(caught.exception.__cause__, ValueError)
+
+    def test_a_runtime_error_keeps_its_own_text(self):
+        with patch.object(shutil, "rmtree"), self.assertRaises(RuntimeError) as caught, \
+                workspace.new_output_directory(self.root, "out"):
+            raise RuntimeError("render failed")
+        self.assertTrue(str(caught.exception).startswith("render failed; could not remove"))
+
+    def test_leftovers_after_a_cancellation_are_a_note_on_the_original_error(self):
+        error = asyncio.CancelledError()
+        with patch.object(shutil, "rmtree"), self.assertRaises(asyncio.CancelledError) as caught, \
+                workspace.new_output_directory(self.root, "out"):
+            raise error
+        self.assertIs(caught.exception, error)
+        self.assertIn(str(self.root / "out"), "\n".join(error.__notes__))
+
+    def test_a_long_list_of_leftovers_is_shortened(self):
+        with patch.object(shutil, "rmtree"), self.assertRaises(RuntimeError) as caught, \
+                workspace.new_output_directory(self.root, "out") as made:
+            for index in range(30):
+                (made / f"{index:02}.png").write_text("x")
+            raise ValueError("boom")
+        self.assertIn("and 21 more", str(caught.exception))
+
+
+class RemoveScratchTests(unittest.TestCase):
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.tree = Path(folder.name) / "scratch"
+        (self.tree / "sub").mkdir(parents=True)
+        (self.tree / "sub/file.txt").write_text("x")
+
+    def test_removes_the_tree_without_a_warning(self):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            workspace.remove_scratch(self.tree)
+        self.assertFalse(self.tree.exists())
+
+    def test_warns_about_what_is_left(self):
+        with patch.object(shutil, "rmtree"), self.assertWarns(RuntimeWarning) as caught:
+            workspace.remove_scratch(self.tree)
+        self.assertIn(str(self.tree / "sub/file.txt"), str(caught.warning))
+        self.assertTrue(self.tree.exists())
 
 
 if __name__ == "__main__":

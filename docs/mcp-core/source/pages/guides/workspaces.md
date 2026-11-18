@@ -39,6 +39,16 @@ without creating it. It may not be the root itself, leave it (including through 
 parent must exist unless `parents` is true, in which case the missing parents are created.
 `workspace.new_output_dir` validates and creates it.
 
+`workspace.new_output_directory(root, name, *, parents=False)` is a context manager around
+`new_output_dir` for an operation that fills the directory. If the body raises, cancellation included,
+the directory and everything in it are removed before the error continues. Leftovers that cannot be
+removed are named in a `RuntimeError` chained to an `Exception`, or added as a note to any other
+`BaseException`.
+
+`workspace.remove_tree(path)` removes a directory tree, clearing read-only bits inside it when a removal
+is refused, and returns what is still there (empty on success). `workspace.remove_scratch(path)` removes
+a scratch directory and reports leftovers as a `RuntimeWarning`.
+
 `workspace.rel(root, path)` gives a path relative to the root with forward slashes.
 
 | Refusal | Raised | Reported to the caller |
