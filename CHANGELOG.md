@@ -4,6 +4,8 @@ Versions come from git tags; a pull request adds its lines under Unreleased and 
 
 ## Unreleased
 
+## 0.1.8 - 2026-11-19
+
 ### Added
 
 - `proc.run` and `proc.run_sync` take `input`, text or bytes written to the command's standard input.
