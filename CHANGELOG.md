@@ -4,6 +4,12 @@ Versions come from git tags; a pull request adds its lines under Unreleased and 
 
 ## Unreleased
 
+### Added
+
+- `lock.FileLock` is a cross-process file lock, re-entrant in the holding thread, and `lock.held` probes one without creating it.
+- `apps.program` finds a command-line program on `PATH`, then where Homebrew installs it.
+- `media.png_content` returns an image as PNG tool result content, optionally scaled to a long-side edge.
+
 ## 0.1.6 - 2026-11-19
 
 ### Added

@@ -106,6 +106,24 @@ class DirectoryTests(Scratch):
         self.assertIsNone(apps.tool(folder, "render"))
 
 
+class ProgramTests(Scratch):
+    def test_a_program_missing_from_path_is_found_where_homebrew_installs_it(self):
+        brew, empty = self.root / "brew", self.root / "empty"
+        empty.mkdir()
+        installed = write_launcher(brew, "probe-tool", "print('x')\n")
+        os.environ["PATH"] = str(empty)
+        with patch.object(apps, "HOMEBREW", (self.root / "none", brew)):
+            self.assertEqual(apps.program(installed.name), installed)
+            self.assertIsNone(apps.program("absent-tool"))
+
+    def test_path_comes_before_homebrew(self):
+        first = write_launcher(self.root / "first", "probe-tool", "print('x')\n")
+        write_launcher(self.root / "brew", "probe-tool", "print('x')\n")
+        os.environ["PATH"] = str(first.parent)
+        with patch.object(apps, "HOMEBREW", (self.root / "brew",)):
+            self.assertEqual(apps.program(first.name), first)
+
+
 class ExecutableTests(Scratch):
     def find(self, default):
         return apps.find_executable(default, "Thing", "CAVI_THING_BIN", "CAVI_THING_APP")

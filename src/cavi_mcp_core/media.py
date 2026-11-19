@@ -1,10 +1,13 @@
-"""The animation frame receipt servers hand to each other, and the bounded command that fills it.
+"""The animation frame receipt servers hand to each other, the bounded command that fills it,
+and an image as tool result content.
 
 A receipt pins ordered RGBA PNG frames and their source files by SHA-256 inside one
 workspace. Needs Pillow: install ``cavi-mcp-core[media]``. ``run`` is POSIX only.
 """
 
+import base64
 import hashlib
+import io
 import json
 import math
 import os
@@ -14,6 +17,7 @@ import subprocess
 import time
 from pathlib import Path
 
+from mcp.types import ImageContent
 from PIL import Image
 
 SCHEMA = "cavi.animation-media.v1"
@@ -22,6 +26,18 @@ MAX_OUTPUT_BYTES = 512 * 1024 * 1024
 
 class MediaOutcomeUnknown(RuntimeError):
     """A native command started; inspect its new directory before another action."""
+
+
+def png_content(path, edge=None) -> ImageContent:
+    """The image at ``path`` as PNG tool result content, scaled down to at most ``edge`` pixels
+    on its long side when ``edge`` is given."""
+    with Image.open(path) as image:
+        if edge:
+            image.thumbnail((edge, edge))
+        data = io.BytesIO()
+        image.save(data, "PNG")
+    encoded = base64.b64encode(data.getvalue()).decode()
+    return ImageContent(type="image", data=encoded, mime_type="image/png")
 
 
 def digest(path):

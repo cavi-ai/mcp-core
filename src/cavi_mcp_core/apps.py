@@ -34,6 +34,8 @@ VERSION_PATTERNS = (re.compile(r"version\s+(\S+)", re.IGNORECASE),
 PROBE_TIMEOUT = 10
 # Where macOS installs applications.
 APPLICATIONS = Path("/Applications")
+# Where Homebrew installs command-line programs: Apple silicon, then Intel.
+HOMEBREW = (Path("/opt/homebrew/bin"), Path("/usr/local/bin"))
 
 _VERSIONS: dict[tuple[str, int], str | None] = {}
 
@@ -106,6 +108,14 @@ def bundle_executable(app) -> Path | None:
 def tool(directory, name: str) -> Path | None:
     """``name`` as an executable inside ``directory`` (``.exe``, ``.cmd`` ... on Windows)."""
     found = shutil.which(name, path=str(directory))
+    return Path(found) if found else None
+
+
+def program(name: str) -> Path | None:
+    """A command-line program such as ``ffmpeg`` on ``PATH``, else where Homebrew installs it,
+    which the short ``PATH`` a client may start a server with leaves out."""
+    search = os.pathsep.join([os.environ.get("PATH", ""), *map(str, HOMEBREW)])
+    found = shutil.which(name, path=search)
     return Path(found) if found else None
 
 

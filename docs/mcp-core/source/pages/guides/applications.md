@@ -9,6 +9,10 @@ override in `env` when set, else the newest matching bundle under `/Applications
 `AppUnavailable` or `AppMismatch` with a stable `error_code` (`APP_UNAVAILABLE`,
 `APP_IDENTITY_MISMATCH`).
 
+`apps.program(name)` finds a command-line program such as `ffmpeg` on `PATH`, then in
+`/opt/homebrew/bin` and `/usr/local/bin`, which the short `PATH` a client may start a server with leaves
+out. It returns None when none is installed.
+
 `apps.version` reads a bundle's version without running it, `apps.running` asks whether an executable has
 a process, and `apps.processes` lists the processes of one executable on macOS.
 
