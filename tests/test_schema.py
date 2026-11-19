@@ -1,8 +1,10 @@
 import copy
 import json
 import unittest
+from typing import Annotated, Literal
 
 from jsonschema import Draft202012Validator
+from pydantic import BaseModel, Field
 
 from cavi_mcp_core.schema import compact_schema, validate_variant
 
@@ -100,6 +102,41 @@ class SchemaSemanticsTests(unittest.TestCase):
         self.assertEqual(candidate["properties"]["value"], {
             "type": "string", "minLength": 2, "description": "A named value.",
         })
+
+    def test_discriminator_mappings_never_point_at_inlined_definitions(self):
+        class Ik(BaseModel):
+            type: Literal["IK"] = "IK"
+            chain: int
+
+        class Limit(BaseModel):
+            type: Literal["LIMIT"]
+            axis: str
+
+        class Spec(BaseModel):
+            constraint: Annotated[Ik | Limit, Field(discriminator="type")]
+
+        candidate = self.assert_equivalent(Spec.model_json_schema(), [
+            {"constraint": {"type": "IK", "chain": 2}}, {"constraint": {"chain": 2}},
+            {"constraint": {"type": "LIMIT", "axis": "X"}}, {"constraint": {"type": "LIMIT"}},
+            {"constraint": {"type": "OTHER"}}, {},
+        ])
+        pointers = []
+
+        def collect(node):
+            if isinstance(node, dict):
+                if isinstance(node.get("$ref"), str):
+                    pointers.append(node["$ref"])
+                pointers.extend(node.get("discriminator", {}).get("mapping", {}).values())
+                for value in node.values():
+                    collect(value)
+            elif isinstance(node, list):
+                for value in node:
+                    collect(value)
+
+        collect(candidate)
+        for pointer in pointers:
+            with self.subTest(pointer=pointer):
+                self.assertIn(pointer.removeprefix("#/$defs/"), candidate.get("$defs", {}))
 
     def test_recursive_definitions_and_pointer_escaping_keep_their_meaning(self):
         schema = {"$ref": "#/$defs/a~1b", "$defs": {"a/b": {
