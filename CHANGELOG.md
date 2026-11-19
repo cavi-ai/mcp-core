@@ -4,6 +4,8 @@ Versions come from git tags; a pull request adds its lines under Unreleased and 
 
 ## Unreleased
 
+## 0.1.5 - 2026-11-18
+
 ### Added
 
 - `workspace.new_output_directory` removes a new output directory when the operation filling it fails; `remove_tree` and `remove_scratch` remove trees that contain read-only files and report leftovers.
