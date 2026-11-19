@@ -127,13 +127,16 @@ async def _stop(transport, protocol, grace: float) -> None:
 
 async def run(args, timeout: float, *, cwd=None, env=None, stdout_limit: int | None = None,
               stderr_limit: int | None = None, grace: float | None = None,
-              label: str | None = None) -> Result:
+              label: str | None = None, input: str | bytes | None = None) -> Result:
     """Run ``args`` to completion within ``timeout`` seconds and return its bounded output.
 
     Raises TimeoutError once the deadline passes (the process is stopped first) and lets a
     cancellation through after stopping the process. A process that is still holding its
     pipes ``DRAIN_GRACE`` seconds after it exited is left alone and its output so far kept.
     ``label`` names the program in the timeout message; it defaults to the file name.
+    ``input`` is written to the process's standard input, which then ends; text is sent as
+    UTF-8. Without it standard input is empty. A process that does not read it is not waited
+    for beyond the deadline.
     """
     argv = [str(arg) for arg in args]
     program = Path(argv[0]).name if argv else "process"
@@ -143,10 +146,15 @@ async def run(args, timeout: float, *, cwd=None, env=None, stdout_limit: int | N
     loop = asyncio.get_running_loop()
     transport, _ = await loop.subprocess_exec(
         lambda: protocol, *argv,
-        stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        stdin=subprocess.DEVNULL if input is None else subprocess.PIPE,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         cwd=cwd, env=env, **_session(),
     )
     try:
+        if input is not None:
+            stdin = transport.get_pipe_transport(0)
+            stdin.write(input.encode() if isinstance(input, str) else input)
+            stdin.write_eof()
         try:
             await asyncio.wait_for(asyncio.shield(protocol.exited), timeout)
         except TimeoutError:

@@ -3,6 +3,7 @@
 Host side only; standard library.
 """
 
+import errno
 import os
 import sys
 import threading
@@ -14,6 +15,8 @@ if sys.platform == "win32":
 else:
     import fcntl
 
+# Absent on Windows, where the link is checked before the file is opened.
+_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
 # Seconds between attempts while waiting on Windows, whose blocking lock gives up after 10 s.
 WINDOWS_RETRY = 0.05
 
@@ -25,10 +28,14 @@ class FileLock:
     holding thread may take it again; the file lock is released when it has released it as often
     as it took it.
     ``with lock:`` waits for it; ``acquire(blocking=False)`` answers False instead of waiting.
+    With ``follow=False`` a ``path`` that is a symbolic link is refused with ``OSError`` and its
+    target is neither created nor opened.
     """
 
-    def __init__(self, path):
+    def __init__(self, path, *, follow: bool = True):
         self.path = Path(path)
+        self._flags = os.O_CREAT | os.O_RDWR | (0 if follow else _NOFOLLOW)
+        self._follow = follow
         self._thread = threading.RLock()
         self._owner = None
         self._depth = 0
@@ -39,7 +46,9 @@ class FileLock:
             return False
         if self._depth == 0:
             try:
-                fd = os.open(self.path, os.O_CREAT | os.O_RDWR, 0o600)
+                if not self._follow and not _NOFOLLOW and self.path.is_symlink():
+                    raise OSError(errno.ELOOP, "The lock file is a symbolic link", str(self.path))
+                fd = os.open(self.path, self._flags, 0o600)
             except BaseException:
                 self._thread.release()
                 raise

@@ -7,6 +7,9 @@ cancellation it stops the whole process group (process tree on Windows) and retu
 exits. `proc.run_sync` is the blocking form and `proc.diagnostics(result)` formats what a failed run
 printed.
 
+`input` is text or bytes written to the command's standard input, which then ends; without it standard
+input is empty.
+
 ## Owned execution
 
 On POSIX, `proc.run` and `proc.run_sync` register commands when `CAVI_MCP_PROCESS_OWNER` names a private

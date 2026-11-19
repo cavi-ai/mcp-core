@@ -52,6 +52,21 @@ class CaptureTests(unittest.TestCase):
                          (3, "out", "err"))
         self.assertFalse(result.truncated)
 
+    def test_input_reaches_standard_input_and_ends_it(self):
+        code = "import sys; sys.stdout.write(sys.stdin.read().upper())"
+        for value in ("request", b"request"):
+            with self.subTest(value=value):
+                self.assertEqual(asyncio.run(proc.run(python(code), 30, input=value)).stdout,
+                                 "REQUEST")
+        self.assertEqual(proc.run_sync(python(code), 30, input="sync").stdout, "SYNC")
+
+    def test_input_a_process_never_reads_does_not_hold_the_run(self):
+        result = asyncio.run(proc.run(python("print('done')"), 30, input="x" * 4_000_000))
+        self.assertEqual((result.returncode, result.stdout.strip()), (0, "done"))
+        with self.assertRaises(TimeoutError):
+            asyncio.run(proc.run(python("import time; time.sleep(30)"), 0.5, grace=0.5,
+                                 input="x" * 4_000_000))
+
     def test_arguments_may_be_paths(self):
         result = asyncio.run(proc.run([Path(sys.executable), "-c", "print(1)"], 30))
         self.assertEqual(result.stdout.strip(), "1")

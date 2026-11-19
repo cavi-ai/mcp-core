@@ -85,6 +85,18 @@ class FileLockTests(unittest.TestCase):
         if os.name == "posix":
             self.assertEqual(self.path.stat().st_mode & 0o077, 0)
 
+    @unittest.skipUnless(hasattr(os, "O_NOFOLLOW"), "needs O_NOFOLLOW")
+    def test_follow_false_refuses_a_symbolic_link_and_leaves_its_target_alone(self):
+        target = self.path.with_name("target")
+        os.symlink(target, self.path)
+        with self.assertRaises(OSError):
+            FileLock(self.path, follow=False).acquire()
+        self.assertFalse(target.exists())
+        with FileLock(self.path):
+            self.assertTrue(target.exists())
+        with FileLock(target, follow=False):
+            self.assertTrue(held(target))
+
 
 if __name__ == "__main__":
     unittest.main()

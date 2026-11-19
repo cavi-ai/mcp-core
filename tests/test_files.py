@@ -30,6 +30,16 @@ class InsideTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "inside the shared workspace"):
                 inside(self.root, "link/file.png")
 
+    def test_strict_refuses_links_inside_the_workspace_and_control_characters(self):
+        os.symlink(self.root / "art", self.root / "link")
+        self.assertEqual(inside(self.root, "link/frame.png"), self.root / "art/frame.png")
+        self.assertEqual(inside(self.root, "art/frame.png", strict=True),
+                         self.root / "art/frame.png")
+        for value in ("link/frame.png", "link", "art/a\nb.png", "art/\x00.png", "",
+                      Path("art/frame.png"), None):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                inside(self.root, value, strict=True)
+
     def test_requires_an_existing_workspace(self):
         with self.assertRaises(FileNotFoundError):
             inside(self.root / "missing", "a.png")
