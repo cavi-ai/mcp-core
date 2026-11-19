@@ -7,9 +7,15 @@ import stat
 from pathlib import Path
 
 
-def inside(workspace, value):
-    """``value`` resolved inside ``workspace``; refuses traversal, escapes and the root itself."""
+def inside(workspace, value, *, strict=False):
+    """``value`` resolved inside ``workspace``; refuses traversal, escapes and the root itself.
+
+    With ``strict``, ``value`` must be a nonempty string without control characters, and a
+    symbolic link anywhere in it is refused even when it stays inside the workspace.
+    """
     root = Path(workspace).resolve(strict=True)
+    if strict and (not isinstance(value, str) or not value or any(ord(c) < 32 for c in value)):
+        raise ValueError('Use a nonempty workspace path without control characters')
     path = Path(value)
     if '..' in path.parts:
         raise ValueError('Use workspace paths without parent traversal')
@@ -18,6 +24,8 @@ def inside(workspace, value):
     if (not logical.is_relative_to(root) or not resolved.is_relative_to(root)
             or resolved == root):
         raise ValueError('Path must remain inside the shared workspace')
+    if strict and resolved != logical:
+        raise ValueError('Path must not pass through a symbolic link')
     return resolved
 
 

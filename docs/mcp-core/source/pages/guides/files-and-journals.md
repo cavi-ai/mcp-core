@@ -3,7 +3,8 @@
 ## Bounded reads
 
 `files.inside(workspace, path)` resolves a path inside an existing workspace and refuses `..`, escapes
-through symbolic links and the workspace root.
+through symbolic links and the workspace root. With `strict=True` the path must be a nonempty string
+without control characters, and a symbolic link anywhere in it is refused.
 
 `files.read_bytes(path, limit)`, `files.load_json` and `files.digest` read bounded regular files and refuse
 a file that changes while it is read. `files.parse_json` refuses NaN and Infinity.
@@ -28,7 +29,7 @@ directories and any missing parents.
 the file with owner-only access. `with lock:` waits for it and `lock.acquire(blocking=False)` returns False
 instead of waiting. The holding thread may take it again, and the file lock is freed on its last release;
 other threads of the process wait. `lock.held(path)` says whether a holder has it and never creates the
-file.
+file. `lock.FileLock(path, follow=False)` raises `OSError` when the path is a symbolic link.
 
 ## Images as tool results
 

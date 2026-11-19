@@ -4,6 +4,12 @@ Versions come from git tags; a pull request adds its lines under Unreleased and 
 
 ## Unreleased
 
+### Added
+
+- `proc.run` and `proc.run_sync` take `input`, text or bytes written to the command's standard input.
+- `lock.FileLock(path, follow=False)` refuses a lock file that is a symbolic link.
+- `files.inside(workspace, path, strict=True)` also refuses control characters and any symbolic link in the path.
+
 ## 0.1.7 - 2026-11-19
 
 ### Added
