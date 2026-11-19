@@ -141,6 +141,10 @@ def inline_definitions(schema):
             conflict = []
 
             def replace(node, target=pointer, body=definition, conflicts=conflict):
+                # An OpenAPI discriminator only annotates; its mapping cannot name an inlined body.
+                tag = node.get("discriminator")
+                if isinstance(tag, dict) and target in (tag.get("mapping") or {}).values():
+                    node = {key: value for key, value in node.items() if key != "discriminator"}
                 if node.get("$ref") != target:
                     return node
                 siblings = {key: value for key, value in node.items() if key != "$ref"}

@@ -11,6 +11,10 @@ Versions come from git tags; a pull request adds its lines under Unreleased and 
 
 - `files.digest` streams the file, takes an optional `limit` (`None` for any size) and refuses a file whose status-change time moves while hashed.
 
+### Fixed
+
+- `compact_schema` drops a `discriminator` whose `mapping` names a definition it inlines, so no mapping points at a missing definition.
+
 ## 0.1.5 - 2026-11-18
 
 ### Added
