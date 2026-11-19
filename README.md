@@ -63,8 +63,9 @@ Blender MCP, Substance MCP, Houdini MCP, Adobe MCP, Premiere MCP and After Effec
 | `workspace` | The workspace root and the input and output path rules. |
 | `files` | Workspace-confined, bounded file reads and JSON parsing. |
 | `journal` | Atomic private JSON records and completion receipts. |
-| `media` | Animation frame receipts and the bounded command that fills one. Needs `cavi-mcp-core[media]`. |
-| `apps` | Installed application discovery, versions and running processes. |
+| `media` | Animation frame receipts, the bounded command that fills one, and PNG image results. Needs `cavi-mcp-core[media]`. |
+| `lock` | A cross-process file lock, re-entrant in the holding thread. |
+| `apps` | Installed application discovery, command-line programs, versions and running processes. |
 | `proc` | Bounded subprocesses that stop the whole process group. |
 | `owned_exec` | Launch registration with a process owner. |
 | `supervision` | One supervised command with checked process groups and limits. |

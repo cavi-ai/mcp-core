@@ -1,3 +1,5 @@
+import base64
+import io
 import json
 import sys
 import tempfile
@@ -7,6 +9,26 @@ from pathlib import Path
 from PIL import Image
 
 from cavi_mcp_core import media
+
+
+class PngContentTests(unittest.TestCase):
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.path = Path(folder.name) / "frame.png"
+        Image.new("RGBA", (2000, 1000), (240, 10, 0, 123)).save(self.path)
+
+    def decoded(self, content):
+        self.assertEqual((content.type, content.mime_type), ("image", "image/png"))
+        return Image.open(io.BytesIO(base64.b64decode(content.data)))
+
+    def test_an_edge_scales_the_long_side_down_to_it(self):
+        image = self.decoded(media.png_content(self.path, 768))
+        self.assertEqual((image.format, image.size), ("PNG", (768, 384)))
+
+    def test_without_an_edge_the_image_keeps_its_size_and_pixels(self):
+        image = self.decoded(media.png_content(self.path))
+        self.assertEqual((image.size, image.getpixel((5, 5))), ((2000, 1000), (240, 10, 0, 123)))
 
 
 class ReceiptTests(unittest.TestCase):
