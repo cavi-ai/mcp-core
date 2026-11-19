@@ -415,3 +415,112 @@ class SupervisorTests(unittest.TestCase):
             result, _ = self.run_command("import time;time.sleep(20)", seconds=0.2)
         self.assertIsNone(processes.inspect(result["pid"]))
         self.assertIn("endpoint cleanup failed", result["cleanup_error"])
+
+
+class GroupTests(unittest.TestCase):
+    def run_group(self, source, folder, *, seconds=5, memory=1048576, cancel=None, env=None):
+        from cavi_mcp_core import supervision
+
+        root = Path(folder).resolve()
+        return supervision.run_group(
+            [sys.executable, "-c", source],
+            cwd=root,
+            env=dict(os.environ) if env is None else env,
+            stdout=root / "out.log",
+            stderr=root / "err.log",
+            max_seconds=seconds,
+            max_rss_kib=memory,
+            minimum_available_kib=0,
+            cancel=cancel,
+        )
+
+    @supported
+    def test_streams_stay_apart_and_the_exit_status_is_returned(self):
+        source = "import sys;print('out');print('err',file=sys.stderr);sys.exit(3)"
+        with tempfile.TemporaryDirectory() as folder:
+            result = self.run_group(source, folder)
+            self.assertEqual((Path(folder) / "out.log").read_text(), "out\n")
+            self.assertEqual((Path(folder) / "err.log").read_text(), "err\n")
+        self.assertEqual(result["exit_code"], 3)
+        self.assertIsNone(result["error"])
+        self.assertIsNone(result["cleanup_error"])
+
+    @supported
+    def test_a_member_that_outlives_the_leader_is_retired(self):
+        from cavi_mcp_core import processes
+
+        source = (
+            "import subprocess,sys;"
+            "p=subprocess.Popen([sys.executable,'-c','import time;time.sleep(20)']);"
+            "print(p.pid,flush=True)"
+        )
+        with tempfile.TemporaryDirectory() as folder:
+            result = self.run_group(source, folder)
+            member = int((Path(folder) / "out.log").read_text())
+        self.assertEqual(result["exit_code"], 0, result)
+        self.assertIsNone(result["cleanup_error"])
+        self.assertIsNone(processes.inspect(member))
+
+    @supported
+    def test_deadline_memory_and_cancellation_retire_the_group(self):
+        from cavi_mcp_core import processes
+
+        sleeper = "import time;time.sleep(20)"
+        with tempfile.TemporaryDirectory() as folder:
+            cancel = Path(folder) / "cancel"
+            for expected, kwargs in (
+                ("deadline", {"seconds": 0.3}),
+                ("memory", {"memory": 1}),
+                ("cancelled", {"cancel": cancel}),
+            ):
+                if "cancel" in kwargs:
+                    timer = threading.Timer(0.3, cancel.touch)
+                    timer.start()
+                    self.addCleanup(timer.cancel)
+                with tempfile.TemporaryDirectory() as run:
+                    result = self.run_group(sleeper, run, **kwargs)
+                with self.subTest(expected=expected):
+                    self.assertIsNotNone(result["pid"], result)
+                    self.assertIn(expected, result["error"])
+                    self.assertIsNone(result["cleanup_error"])
+                    self.assertIsNone(processes.inspect(result["pid"]))
+
+    @supported
+    def test_runs_under_a_configured_owner_and_registers_with_it(self):
+        from cavi_mcp_core import supervision
+
+        source = (
+            "import os,sys;from pathlib import Path;from cavi_mcp_core import supervision;"
+            "root=Path.cwd();"
+            "r=supervision.run_group([sys.executable,'-c','print(7)'],cwd=root,"
+            "env=dict(os.environ),stdout=root/'out.log',stderr=root/'err.log',"
+            "max_seconds=5,max_rss_kib=1048576,minimum_available_kib=0);"
+            "sys.exit(r['exit_code'] or bool(r['error'] or r['cleanup_error']))"
+        )
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder).resolve()
+            result = supervision.run(
+                [sys.executable, "-c", source],
+                cwd=root,
+                env=dict(os.environ),
+                directory=root / "owner",
+                max_seconds=10,
+                max_rss_kib=4 * 1048576,
+                minimum_available_kib=0,
+            )
+            records = list((root / "owner/records").glob("*.json"))
+            self.assertEqual((root / "out.log").read_text(), "7\n")
+        self.assertEqual(result["exit_code"], 0, result)
+        self.assertIsNone(result["cleanup_error"])
+        self.assertEqual(len(records), 2)
+
+    def test_a_configured_owner_cannot_be_dropped(self):
+        from unittest.mock import patch
+
+        with (
+            tempfile.TemporaryDirectory() as folder,
+            patch.dict(os.environ, {"CAVI_MCP_PROCESS_OWNER": "/missing/owner.json"}),
+        ):
+            with self.assertRaises(ValueError):
+                self.run_group("print(1)", folder, env={})
+            self.assertFalse((Path(folder) / "out.log").exists())

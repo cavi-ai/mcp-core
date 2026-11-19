@@ -33,6 +33,27 @@ For a neutral Python command with retained records:
 uv run --locked python examples/supervised_process.py --out /absolute/new-output
 ```
 
+## One process group
+
+`supervision.run_group` supervises one command's own process group without creating an owner. Under a
+configured `CAVI_MCP_PROCESS_OWNER` the command registers with that owner; otherwise it runs unregistered.
+A child environment cannot drop or replace the configured owner.
+
+```python
+receipt = supervision.run_group(
+    command, cwd=workspace, env=environment,
+    stdout=new_stdout_file, stderr=new_stderr_file,
+    max_seconds=120, max_rss_kib=8 * 1024 * 1024, minimum_available_kib=0,
+    cancel=cancel_file,
+)
+```
+
+stdout and stderr go to separate new files. The deadline, the group's summed RSS, host headroom and an
+existing `cancel` file each stop the run. The leader stays unreaped until its group is empty, so members
+that outlive it are retired without risk of signalling a reused group id. Members that leave the group are
+outside this supervision. The receipt includes `pid`, `exit_code`, `error`, `cleanup_error`,
+`peak_rss_kib` and elapsed `seconds`.
+
 ## A resident owner
 
 For a lifetime independent of the submitting caller, use `resident.start`:

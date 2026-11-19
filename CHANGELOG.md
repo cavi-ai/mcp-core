@@ -4,6 +4,9 @@ Versions come from git tags; a pull request adds its lines under Unreleased and 
 
 ## Unreleased
 
+### Added
+
+- `supervision.run_group` supervises one command's process group under the configured owner, with separate stdout and stderr files, time, memory and cancellation limits.
 ### Changed
 
 - `files.digest` streams the file, takes an optional `limit` (`None` for any size) and refuses a file whose status-change time moves while hashed.
