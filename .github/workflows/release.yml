@@ -168,3 +168,20 @@ jobs:
           print(json.dumps({"event_type": "cavi-oss-release", "client_payload": envelope}))
           PY
           gh api --method POST /repos/cavi-ai/cavi-home/dispatches --input "$RUNNER_TEMP/payload.json"
+
+  pin-consumers:
+    # A published release moves the cavi-mcp-core pin in after-effects-mcp through its pin-core workflow.
+    name: send the release to consumers
+    needs: publish-pypi
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Require CONSUMER_DISPATCH_TOKEN
+        env:
+          TOKEN: ${{ secrets.CONSUMER_DISPATCH_TOKEN }}
+        run: test -n "$TOKEN" || { echo "::error::Add the CONSUMER_DISPATCH_TOKEN repository secret"; exit 1; }
+      - name: Dispatch core-released to after-effects-mcp
+        env:
+          GH_TOKEN: ${{ secrets.CONSUMER_DISPATCH_TOKEN }}
+        run: gh api repos/cavi-ai/after-effects-mcp/dispatches --method POST -f event_type=core-released
