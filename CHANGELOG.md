@@ -4,6 +4,8 @@ Versions come from git tags; a pull request adds its lines under Unreleased and 
 
 ## Unreleased
 
+- CI dispatches `server-merged` to cartoon-pipeline and `core-released` to character-animator-mcp, alongside the existing consumers.
+
 ## 0.1.8 - 2026-11-19
 
 ### Added
