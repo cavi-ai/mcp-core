@@ -4,6 +4,8 @@ Versions come from git tags; a pull request adds its lines under Unreleased and 
 
 ## Unreleased
 
+## 0.1.7 - 2026-11-19
+
 ### Added
 
 - `lock.FileLock` is a cross-process file lock, re-entrant in the holding thread, and `lock.held` probes one without creating it.
