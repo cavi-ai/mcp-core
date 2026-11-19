@@ -5,6 +5,7 @@ import math
 import os
 import secrets
 import shutil
+import signal
 import socket
 import struct
 import subprocess
@@ -317,4 +318,100 @@ def run(
         "peak_rss_kib": peak,
         "seconds": round(time.monotonic() - begun, 3),
         "registered_groups": owner.groups,
+    }
+
+
+def _exited(pid):
+    """Whether the child has exited, leaving it unreaped so its group id stays reserved."""
+    return os.waitid(os.P_PID, pid, os.WEXITED | os.WNOHANG | os.WNOWAIT) is not None
+
+
+def _retire_group(pgid, seconds=5):
+    deadline = time.monotonic() + seconds
+    while True:
+        rows = processes.group(pgid)
+        if _exited(pgid):
+            rows.pop(pgid, None)
+            if not rows:
+                return
+        with suppress(ProcessLookupError):
+            os.killpg(pgid, signal.SIGKILL)
+        if time.monotonic() >= deadline:
+            raise RuntimeError("Process group members remain after cleanup")
+        time.sleep(0.05)
+
+
+def run_group(
+    command,
+    *,
+    cwd,
+    env,
+    stdout,
+    stderr,
+    max_seconds,
+    max_rss_kib,
+    minimum_available_kib,
+    cancel=None,
+):
+    """Supervise one command's own process group under the configured owner, if any.
+
+    No owner is created: with ``CAVI_MCP_PROCESS_OWNER`` set the command registers with that
+    owner, otherwise it runs unregistered. The leader stays unreaped until its group is empty,
+    so the group id cannot be reused while members are sampled and retired. ``stdout`` and
+    ``stderr`` are new files. Members that leave the group are outside this supervision.
+    """
+    _validate_limits(max_seconds, max_rss_kib, minimum_available_kib)
+    if sys.platform != "darwin" and not sys.platform.startswith("linux"):
+        raise ValueError("Process supervision supports Linux and macOS")
+    argv = gate.command(command, cwd=cwd, env=env)
+    begun = time.monotonic()
+    child, error, cleanup_error, peak = None, None, None, 0
+    try:
+        if minimum_available_kib and processes.available_kib() < minimum_available_kib:
+            raise MemoryError("Process launch requires the selected host memory headroom")
+        if cancel is not None and Path(cancel).exists():
+            raise RuntimeError("Process execution cancelled before launch")
+        with Path(stdout).open("xb") as out, Path(stderr).open("xb") as err:
+            child = subprocess.Popen(
+                argv,
+                cwd=cwd,
+                env=env,
+                start_new_session=True,
+                stdin=subprocess.DEVNULL,
+                stdout=out,
+                stderr=err,
+            )
+        while not _exited(child.pid):
+            if time.monotonic() - begun >= max_seconds:
+                raise TimeoutError("Process deadline exceeded")
+            if cancel is not None and Path(cancel).exists():
+                raise RuntimeError("Process execution cancelled")
+            rss = sum(row["rss_kib"] for row in processes.group(child.pid).values())
+            peak = max(peak, rss)
+            if rss > max_rss_kib:
+                raise MemoryError("Process memory budget exceeded")
+            if minimum_available_kib and processes.available_kib() < minimum_available_kib:
+                raise MemoryError("Process exhausted host memory headroom")
+            time.sleep(0.05)
+    except BaseException as exc:  # noqa: BLE001 - the group is retired before any return
+        error = str(exc) or type(exc).__name__
+    finally:
+        if child is not None:
+            try:
+                _retire_group(child.pid)
+            except BaseException as exc:  # noqa: BLE001 - uncertainty is reported, not hidden
+                cleanup_error = str(exc) or type(exc).__name__
+            try:
+                child.wait(timeout=1)
+            except subprocess.TimeoutExpired:
+                cleanup_error = (
+                    cleanup_error + "; " if cleanup_error else ""
+                ) + "Process exit remains unresolved"
+    return {
+        "pid": child.pid if child else None,
+        "exit_code": child.returncode if child else None,
+        "error": error,
+        "cleanup_error": cleanup_error,
+        "peak_rss_kib": peak,
+        "seconds": round(time.monotonic() - begun, 3),
     }

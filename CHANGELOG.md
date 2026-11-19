@@ -4,6 +4,10 @@ Versions come from git tags; a pull request adds its lines under Unreleased and 
 
 ## Unreleased
 
+### Added
+
+- `supervision.run_group` supervises one command's process group under the configured owner, with separate stdout and stderr files, time, memory and cancellation limits.
+
 ## 0.1.5 - 2026-11-18
 
 ### Added
