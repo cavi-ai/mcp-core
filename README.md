@@ -1,12 +1,12 @@
 # Cavi MCP Core
 
-![A beaver supports a workbench while a hedgehog builds a clockwork dragonfly](https://raw.githubusercontent.com/cavi-ai/mcp-core/main/assets/mcp-core-hero.png)
-
 ## Build the interesting part.
 
-Build your application's tools on a shared foundation. Cavi MCP Core extends the Python MCP server with typed result and error contracts, workspace and file utilities, and bounded process handling, so you can spend more time on what your tools do.
+![A beaver supports a workbench while a hedgehog builds a clockwork dragonfly](https://raw.githubusercontent.com/cavi-ai/mcp-core/main/assets/mcp-core-hero.png)
 
 [![PyPI version](https://img.shields.io/pypi/v/cavi-mcp-core)](https://pypi.org/project/cavi-mcp-core/) [![PyPI weekly downloads](https://img.shields.io/pypi/dw/cavi-mcp-core?label=PyPI%20downloads%2Fweek)](https://pypi.org/project/cavi-mcp-core/) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+Build your application's tools on a shared foundation. Cavi MCP Core extends the Python MCP server with typed result and error contracts, workspace and file utilities, and bounded process handling, so you can spend more time on what your tools do.
 
 ## Install
 
