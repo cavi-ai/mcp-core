@@ -39,9 +39,25 @@ def read_bytes(path, limit):
     return data
 
 
-def digest(path):
-    """SHA-256 of a regular file of at most 64 MiB."""
-    return hashlib.sha256(read_bytes(path, 64 * 1024 * 1024)).hexdigest()
+def _identity(info):
+    return info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns
+
+
+def digest(path, limit=64 * 1024 * 1024):
+    """Streamed SHA-256 of a regular file of at most ``limit`` bytes, or any size for ``None``.
+
+    Refuses a file whose device, inode, size, modification or status-change time moves while hashed.
+    """
+    descriptor = os.open(path, os.O_RDONLY | getattr(os, 'O_NONBLOCK', 0))
+    with os.fdopen(descriptor, 'rb') as stream:
+        before = os.fstat(stream.fileno())
+        if not stat.S_ISREG(before.st_mode) or (limit is not None and before.st_size > limit):
+            raise ValueError('Expected a bounded regular file')
+        result = hashlib.file_digest(stream, 'sha256')
+        after = os.fstat(stream.fileno())
+    if not _identity(before) == _identity(after) == _identity(Path(path).stat()):
+        raise ValueError('Input changed while reading')
+    return result.hexdigest()
 
 
 def parse_json(raw):

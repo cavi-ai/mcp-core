@@ -3,6 +3,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from cavi_mcp_core.files import digest, inside, load_json, parse_json, read_bytes
 
@@ -45,6 +46,35 @@ class ReadTests(unittest.TestCase):
         path.write_bytes(b"abc")
         self.assertEqual(read_bytes(path, 3), b"abc")
         self.assertEqual(digest(path), hashlib.sha256(b"abc").hexdigest())
+
+    def test_digest_streams_past_the_default_bound_only_when_asked(self):
+        path = self.root / "large.bin"
+        size = 64 * 1024 * 1024 + 1
+        with path.open("wb") as stream:
+            stream.truncate(size)
+        self.assertEqual(digest(path, limit=None), hashlib.sha256(bytes(size)).hexdigest())
+        for limit in ((), (size - 1,)):
+            with (
+                self.subTest(limit=limit),
+                self.assertRaisesRegex(ValueError, "bounded regular file"),
+            ):
+                digest(path, *limit)
+
+    def test_digest_refuses_a_file_whose_status_changes_while_hashed(self):
+        path = self.root / "a.bin"
+        path.write_bytes(b"abc")
+        os.chmod(path, 0o644)
+        real = hashlib.file_digest
+
+        def changed_during_read(stream, name):
+            os.chmod(path, 0o600)
+            return real(stream, name)
+
+        with (
+            mock.patch("hashlib.file_digest", changed_during_read),
+            self.assertRaisesRegex(ValueError, "changed while reading"),
+        ):
+            digest(path)
 
     def test_refuses_oversized_files_and_directories(self):
         path = self.root / "a.bin"
