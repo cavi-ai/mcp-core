@@ -181,11 +181,18 @@ jobs:
         env:
           TOKEN: ${{ secrets.CONSUMER_DISPATCH_TOKEN }}
         run: test -n "$TOKEN" || { echo "::error::Add the CONSUMER_DISPATCH_TOKEN repository secret"; exit 1; }
+      - name: Wait for PyPI to serve the release
+        # A consumer that locked 18 seconds after the 0.1.8 upload still resolved 0.1.7.
+        run: sleep 120
       - name: Dispatch core-released to after-effects-mcp
         env:
           GH_TOKEN: ${{ secrets.CONSUMER_DISPATCH_TOKEN }}
-        run: gh api repos/cavi-ai/after-effects-mcp/dispatches --method POST -f event_type=core-released
+        run: >-
+          gh api repos/cavi-ai/after-effects-mcp/dispatches --method POST -f event_type=core-released
+          -f "client_payload[version]=${GITHUB_REF_NAME#v}"
       - name: Dispatch core-released to character-animator-mcp
         env:
           GH_TOKEN: ${{ secrets.CONSUMER_DISPATCH_TOKEN }}
-        run: gh api repos/cavi-ai/character-animator-mcp/dispatches --method POST -f event_type=core-released
+        run: >-
+          gh api repos/cavi-ai/character-animator-mcp/dispatches --method POST -f event_type=core-released
+          -f "client_payload[version]=${GITHUB_REF_NAME#v}"
