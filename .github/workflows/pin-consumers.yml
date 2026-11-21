@@ -1,0 +1,122 @@
+name: pin-consumers
+
+# Moves the server pins of each consumer to main, checks the pinned consumer and merges the pin.
+on:
+  workflow_call:
+    inputs:
+      consumers:
+        description: JSON list of consumer repositories under cavi-ai.
+        required: true
+        type: string
+    secrets:
+      token:
+        description: "Fine-grained token: contents read on the server repos; contents and pull requests write on the consumers."
+        required: true
+
+permissions: {}
+
+jobs:
+  pin:
+    name: pin ${{ matrix.consumer }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        consumer: ${{ fromJSON(inputs.consumers) }}
+    concurrency:
+      group: pin-${{ matrix.consumer }}
+      cancel-in-progress: false
+    env:
+      GH_TOKEN: ${{ secrets.token }}
+      CONSUMER: ${{ matrix.consumer }}
+    steps:
+      - name: Require the token
+        run: test -n "$GH_TOKEN" || { echo "::error::Pass the consumer token as the token secret"; exit 1; }
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          python-version: "3.15"
+      # Consumer output stays out of the caller's logs.
+      - name: Check out the consumer
+        run: |
+          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/cavi-ai/".insteadOf "https://github.com/cavi-ai/"
+          git clone -q --recurse-submodules "https://github.com/cavi-ai/$CONSUMER" consumer > /dev/null 2>&1
+      - id: sync
+        name: Move the pins
+        working-directory: consumer
+        run: |
+          set -euo pipefail
+          body="$RUNNER_TEMP/pin-body.md"
+          case "$CONSUMER" in
+            game-art-pipeline)
+              python3 scripts/servers.py sync > "$RUNNER_TEMP/sync.json" 2> /dev/null
+              python3 -c 'import json, sys; sys.exit(0 if json.load(open(sys.argv[1]))["changed"] else 1)' "$RUNNER_TEMP/sync.json" || exit 0
+              key=$(git submodule status | awk '{gsub(/^[-+U]/, "", $1); print substr($1, 1, 7)}' | paste -sd- -)
+              python3 -c 'import json, sys; m = json.load(open(sys.argv[1]))["moved"]; print("\n".join("- %s %s -> %s" % (r, (v["from"] or "new")[:7], v["to"][:7]) for r, v in m.items()))' "$RUNNER_TEMP/sync.json" > "$body"
+              ;;
+            cartoon-pipeline)
+              locked() {
+                python3 -c 'import tomllib; names = {"cavi-adobe-mcp", "cavi-mcp-core", "cavi-character-animator-mcp"}; [print(p["name"], p["source"]["git"].rsplit("#", 1)[1]) for p in tomllib.load(open("uv.lock", "rb"))["package"] if p["name"] in names and "git" in p["source"]]'
+              }
+              locked > "$RUNNER_TEMP/before.txt"
+              uv lock --upgrade-package cavi-adobe-mcp --upgrade-package cavi-mcp-core --upgrade-package cavi-character-animator-mcp > /dev/null 2>&1
+              locked > "$RUNNER_TEMP/after.txt"
+              git diff --quiet uv.lock && exit 0
+              key=$(sha256sum uv.lock | cut -c1-12)
+              python3 -c 'import sys; a = dict(l.split() for l in open(sys.argv[1])); b = dict(l.split() for l in open(sys.argv[2])); print("\n".join("- %s %s -> %s" % (n, (a.get(n) or "new")[:7], v[:7]) for n, v in b.items() if a.get(n) != v))' "$RUNNER_TEMP/before.txt" "$RUNNER_TEMP/after.txt" > "$body"
+              ;;
+            *)
+              echo "::error::No pin steps for this consumer"; exit 1
+              ;;
+          esac
+          echo "branch=bot/pin-servers-$key" >> "$GITHUB_OUTPUT"
+      - name: Check the pinned consumer
+        if: steps.sync.outputs.branch
+        working-directory: consumer
+        run: |
+          set -euo pipefail
+          check() {
+            "$@" > "$RUNNER_TEMP/check.log" 2>&1 || { tail -n 30 "$RUNNER_TEMP/check.log"; exit 1; }
+          }
+          check uv sync --locked --dev
+          case "$CONSUMER" in
+            game-art-pipeline)
+              check uv run --locked ruff check scripts tests skills
+              check uv run --locked python -m pytest tests -n auto
+              for suite in skills/blender-unity-assets/scripts skills/unity-hdrp/scripts; do
+                check uv run --locked python -m unittest discover -s "$suite"
+              done
+              ;;
+            cartoon-pipeline)
+              check uv run --locked ruff check scripts tests
+              check uv run --locked python -m unittest discover -s tests
+              ;;
+          esac
+      - name: Propose and merge the pin
+        if: steps.sync.outputs.branch
+        working-directory: consumer
+        env:
+          BRANCH: ${{ steps.sync.outputs.branch }}
+        run: |
+          set -euo pipefail
+          case "$CONSUMER" in
+            game-art-pipeline) paths=(.gitmodules pyproject.toml uv.lock servers plugin.json .claude-plugin .codex-plugin) ;;
+            cartoon-pipeline) paths=(uv.lock) ;;
+          esac
+          if ! git ls-remote --exit-code origin "refs/heads/$BRANCH" > /dev/null 2>&1; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git switch -q -c "$BRANCH"
+            git add -A -- "${paths[@]}"
+            git commit -q -m "chore: pin servers to main"
+            git push -q origin "$BRANCH" > /dev/null 2>&1
+          fi
+          if [ -z "$(gh pr list --head "$BRANCH" --state all --json number -q '.[0].number')" ]; then
+            for old in $(gh pr list --state open --json number,headRefName -q '.[] | select(.headRefName | startswith("bot/pin-servers-")) | .number'); do
+              gh pr close "$old" --delete-branch --comment "Superseded by a newer server pin." > /dev/null 2>&1
+            done
+            gh pr create --head "$BRANCH" --title "chore: pin servers to main" --body-file "$RUNNER_TEMP/pin-body.md" > /dev/null
+          fi
+          if [ -n "$(gh pr list --head "$BRANCH" --state open --json number -q '.[0].number')" ]; then
+            gh pr merge "$BRANCH" --squash > /dev/null
+          fi

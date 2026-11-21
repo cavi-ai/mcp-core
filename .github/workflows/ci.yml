@@ -94,21 +94,11 @@ jobs:
           if-no-files-found: error
 
   pin-consumers:
-    # A green main moves the mcp-core pin in game-art-pipeline and cartoon-pipeline through their pin-servers workflows.
+    # A green main moves the server pins in game-art-pipeline and cartoon-pipeline, checks each and merges the pin.
     needs: [lint, unit, evals]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - name: Require CONSUMER_DISPATCH_TOKEN
-        env:
-          TOKEN: ${{ secrets.CONSUMER_DISPATCH_TOKEN }}
-        run: test -n "$TOKEN" || { echo "::error::Add the CONSUMER_DISPATCH_TOKEN repository secret"; exit 1; }
-      - name: Dispatch server-merged to game-art-pipeline
-        env:
-          GH_TOKEN: ${{ secrets.CONSUMER_DISPATCH_TOKEN }}
-        run: gh api repos/cavi-ai/game-art-pipeline/dispatches --method POST -f event_type=server-merged
-      - name: Dispatch server-merged to cartoon-pipeline
-        env:
-          GH_TOKEN: ${{ secrets.CONSUMER_DISPATCH_TOKEN }}
-        run: gh api repos/cavi-ai/cartoon-pipeline/dispatches --method POST -f event_type=server-merged
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    uses: ./.github/workflows/pin-consumers.yml
+    with:
+      consumers: '["game-art-pipeline", "cartoon-pipeline"]'
+    secrets:
+      token: ${{ secrets.CONSUMER_DISPATCH_TOKEN }}
