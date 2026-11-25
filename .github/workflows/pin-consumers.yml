@@ -97,6 +97,10 @@ jobs:
             pipeline) packages=(cavi-mcp-core); lint=(.) ;;
             *) echo "::error::No pin steps for this consumer"; exit 1 ;;
           esac
+          if [ ! -f uv.lock ]; then
+            echo "::notice::The consumer has no uv.lock on main. Skipping the pin."
+            exit 0
+          fi
           # Only the copied checkout is mounted. Consumer code cannot write to the publishing checkout or runner commands.
           scratch=$(mktemp -d "$RUNNER_TEMP/pin-checkout.XXXXXXXX")
           cp -a . "$scratch"
@@ -151,6 +155,10 @@ jobs:
           CORE_SHA: ${{ inputs.core_sha }}
         run: |
           set -euo pipefail
+          if ! jq -e '.dependencies["@cavi-ai/mcp-core"]' package.json > /dev/null; then
+            echo "::notice::The consumer does not depend on @cavi-ai/mcp-core on main. Skipping the pin."
+            exit 0
+          fi
           # Only the copied checkout is mounted. Consumer code cannot write to the publishing checkout or runner commands.
           scratch=$(mktemp -d "$RUNNER_TEMP/pin-checkout.XXXXXXXX")
           cp -a . "$scratch"
@@ -182,6 +190,13 @@ jobs:
             exit 0
           fi
           cmp -s package-lock.json "$verified" && exit 0
+          image=$(docker build --quiet --build-arg "BASE_IMAGE=$image" - <<'DOCKERFILE'
+          ARG BASE_IMAGE
+          FROM ${BASE_IMAGE}
+          RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
+              && rm -rf /var/lib/apt/lists/*
+          DOCKERFILE
+          )
           if ! isolated bash -euc 'npm ci --ignore-scripts --no-audit --no-fund && npm run test:mcp'; then
             echo "::error::Pinned consumer checks failed"; exit 1
           fi
