@@ -45,7 +45,7 @@ stdio, calls `status` and prints `{"ready": true}`. The
 
 ## Node
 
-`@cavi-ai/mcp-core` in `packages/node` is the stdio MCP server layer for Node tool servers: request validation, `initialize`, `ping`, `tools/list` and `tools/call` routing, JSON-RPC errors, request cancellation and ordered replies. It has no runtime dependencies and shares the Python core's annotations and failure result (`tests/fixtures/failure-result.json`).
+`@cavi-ai/mcp-core` in `packages/node` is the stdio MCP server layer for Node tool servers: request validation, `initialize`, `ping`, `tools/list` and `tools/call` routing, JSON-RPC errors, request cancellation and ordered replies. It shares the Python core's annotations and failure result (`tests/fixtures/failure-result.json`).
 
 ```sh
 npm install @cavi-ai/mcp-core
@@ -73,9 +73,9 @@ await runStdio({
 });
 ```
 
-A handler that throws `OperationRejected` or `OperationUnknown` returns the structured failure. Any other error is a defect: the caller gets a generic message and the details go to stderr. `createRouter` exposes the same routing for one request at a time.
+A handler that throws `OperationRejected` or `OperationUnknown` returns the structured failure. Any other error is a defect: the caller gets a generic message and the details go to stderr. `createRouter` exposes the same routing for one request at a time. A server with its own router passes `runStdio({ route })`, and `route(request, { signal })` answers each request.
 
-Tool schemas declare `type: "object"` at the top level. The Node router supports `type` (single types or unions), `properties`, `required`, `additionalProperties`, and `items`, including nested schemas. Registration rejects unsupported keywords. Invalid arguments get JSON-RPC error `-32602` before the handler runs. A successful result must match `outputSchema` when supplied. Without it, objects produce both text and structured content, and other values produce text only.
+Tool schemas declare `type: "object"` at the top level and are compiled with Ajv in strict mode, so registration rejects unknown keywords. Invalid arguments get JSON-RPC error `-32602`, with the validation errors, before the handler runs. A successful result must match `outputSchema` when supplied. Without it, objects produce both text and structured content, and other values produce text only.
 
 ## Shared foundations
 

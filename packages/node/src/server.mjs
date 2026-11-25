@@ -1,6 +1,6 @@
 import { createInterface } from "node:readline";
 import { OperationRejected, OperationUnknown, failure } from "./contracts.mjs";
-import { compileObjectSchema, isObject } from "./schema.mjs";
+import { isObject, schemaCompiler } from "./schema.mjs";
 
 const MAX_PENDING = 32;
 
@@ -19,13 +19,14 @@ const invalidRequest = () => ({ jsonrpc: "2.0", id: null, error: { code: -32600,
 export function createRouter({ name, version, protocolVersion, instructions, tools = [], unknownNextAction, stderr = process.stderr,
   anticipated = [OperationRejected, OperationUnknown] }) {
   const registry = new Map();
+  const compileObjectSchema = schemaCompiler();
   const listed = tools.map(({ handler, ...metadata }) => {
     const definition = structuredClone(metadata);
     const { name: toolName, inputSchema, outputSchema } = definition;
     registry.set(toolName, {
       handler,
-      acceptsInput: compileObjectSchema(inputSchema, `${toolName}.inputSchema`),
-      acceptsOutput: outputSchema === undefined ? undefined : compileObjectSchema(outputSchema, `${toolName}.outputSchema`),
+      inputErrors: compileObjectSchema(inputSchema, `${toolName}.inputSchema`),
+      outputErrors: outputSchema === undefined ? undefined : compileObjectSchema(outputSchema, `${toolName}.outputSchema`),
     });
     return definition;
   });
@@ -43,17 +44,17 @@ export function createRouter({ name, version, protocolVersion, instructions, too
       else if (method === "tools/call") {
         if (typeof params.name !== "string" || !params.name) throw rpcError("tool name is required", -32602);
         if (!registry.has(params.name)) throw rpcError(`unknown tool: ${params.name}`, -32601);
-        const { handler, acceptsInput, acceptsOutput } = registry.get(params.name);
+        const { handler, inputErrors, outputErrors } = registry.get(params.name);
         const args = params.arguments === undefined ? {} : params.arguments;
         if (!isObject(args)) throw rpcError("arguments must be an object", -32602);
-        if (!acceptsInput(args)) throw rpcError(`arguments do not match ${params.name} inputSchema`, -32602);
+        const invalidInput = inputErrors(args);
+        if (invalidInput) throw rpcError(`arguments do not match ${params.name} inputSchema: ${invalidInput}`, -32602);
         try {
           const value = await handler(args, { signal });
           const text = JSON.stringify(value === undefined ? null : value);
           const serialized = JSON.parse(text);
-          if (acceptsOutput && !acceptsOutput(serialized)) {
-            throw new TypeError(`result does not match ${params.name} outputSchema`);
-          }
+          const invalidOutput = outputErrors?.(serialized);
+          if (invalidOutput) throw new TypeError(`result does not match ${params.name} outputSchema: ${invalidOutput}`);
           result = { content: [{ type: "text", text }] };
           if (isObject(serialized)) result.structuredContent = serialized;
         } catch (error) {
@@ -71,9 +72,12 @@ export function createRouter({ name, version, protocolVersion, instructions, too
   };
 }
 
-/** Serves newline-delimited JSON-RPC until input ends or output disconnects. */
-export async function runStdio({ input = process.stdin, output = process.stdout, ...options }) {
-  const route = createRouter(options);
+/**
+ * Serves newline-delimited JSON-RPC until input ends or output disconnects.
+ * `route(request, { signal })` defaults to `createRouter(options)`; a server with its own router passes it.
+ */
+export async function runStdio({ input = process.stdin, output = process.stdout, route, ...options }) {
+  route ??= createRouter(options);
   const lines = createInterface({ input, crlfDelay: Infinity });
   const pending = new Map();
   let queue = Promise.resolve();
