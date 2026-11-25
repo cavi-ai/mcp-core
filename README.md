@@ -75,6 +75,8 @@ await runStdio({
 
 A handler that throws `OperationRejected` or `OperationUnknown` returns the structured failure. Any other error is a defect: the caller gets a generic message and the details go to stderr. `createRouter` exposes the same routing for one request at a time.
 
+Tool schemas declare `type: "object"` at the top level. The Node router supports `type` (single types or unions), `properties`, `required`, `additionalProperties`, and `items`, including nested schemas. Registration rejects unsupported keywords. Invalid arguments get JSON-RPC error `-32602` before the handler runs. A successful result must match `outputSchema` when supplied. Without it, objects produce both text and structured content, and other values produce text only.
+
 ## Shared foundations
 
 - Give tool callers consistent typed results and structured failures.

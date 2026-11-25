@@ -1,10 +1,12 @@
 import { createInterface } from "node:readline";
 import { OperationRejected, OperationUnknown, failure } from "./contracts.mjs";
+import { compileObjectSchema, isObject } from "./schema.mjs";
 
 const MAX_PENDING = 32;
 
 const rpcError = (message, code) => Object.assign(new Error(message), { code });
-const isPlainObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+const isRequestId = (value) => typeof value === "string" || Number.isInteger(value);
+const invalidRequest = () => ({ jsonrpc: "2.0", id: null, error: { code: -32600, message: "invalid request" } });
 
 /**
  * Builds `route(request, { signal })`, which answers one JSON-RPC request object.
@@ -16,26 +18,44 @@ const isPlainObject = (value) => value !== null && typeof value === "object" && 
  */
 export function createRouter({ name, version, protocolVersion, instructions, tools = [], unknownNextAction, stderr = process.stderr,
   anticipated = [OperationRejected, OperationUnknown] }) {
-  const handlers = new Map(tools.map((tool) => [tool.name, tool.handler]));
-  const listed = tools.map(({ handler, ...definition }) => definition);
+  const registry = new Map();
+  const listed = tools.map(({ handler, ...metadata }) => {
+    const definition = structuredClone(metadata);
+    const { name: toolName, inputSchema, outputSchema } = definition;
+    registry.set(toolName, {
+      handler,
+      acceptsInput: compileObjectSchema(inputSchema, `${toolName}.inputSchema`),
+      acceptsOutput: outputSchema === undefined ? undefined : compileObjectSchema(outputSchema, `${toolName}.outputSchema`),
+    });
+    return definition;
+  });
   const capabilities = { tools: {} };
   return async function route(request, { signal } = {}) {
     const { id, method, params = {} } = request;
+    if (!isRequestId(id)) return invalidRequest();
     try {
-      if (!isPlainObject(params)) throw rpcError("params must be an object", -32602);
+      if (!isObject(params)) throw rpcError("params must be an object", -32602);
       let result;
       if (method === "initialize") {
         result = { protocolVersion, capabilities, serverInfo: { name, version }, ...(instructions ? { instructions } : {}) };
       } else if (method === "ping") result = {};
-      else if (method === "tools/list") result = { tools: listed };
+      else if (method === "tools/list") result = { tools: structuredClone(listed) };
       else if (method === "tools/call") {
         if (typeof params.name !== "string" || !params.name) throw rpcError("tool name is required", -32602);
-        if (!handlers.has(params.name)) throw rpcError(`unknown tool: ${params.name}`, -32601);
+        if (!registry.has(params.name)) throw rpcError(`unknown tool: ${params.name}`, -32601);
+        const { handler, acceptsInput, acceptsOutput } = registry.get(params.name);
         const args = params.arguments === undefined ? {} : params.arguments;
-        if (!isPlainObject(args)) throw rpcError("arguments must be an object", -32602);
+        if (!isObject(args)) throw rpcError("arguments must be an object", -32602);
+        if (!acceptsInput(args)) throw rpcError(`arguments do not match ${params.name} inputSchema`, -32602);
         try {
-          const value = await handlers.get(params.name)(args, { signal });
-          result = { content: [{ type: "text", text: JSON.stringify(value) }], structuredContent: value };
+          const value = await handler(args, { signal });
+          const text = JSON.stringify(value === undefined ? null : value);
+          const serialized = JSON.parse(text);
+          if (acceptsOutput && !acceptsOutput(serialized)) {
+            throw new TypeError(`result does not match ${params.name} outputSchema`);
+          }
+          result = { content: [{ type: "text", text }] };
+          if (isObject(serialized)) result.structuredContent = serialized;
         } catch (error) {
           if (anticipated.some((kind) => error instanceof kind)) result = failure(params.name, error, unknownNextAction);
           else if (!signal?.aborted) {
@@ -51,7 +71,7 @@ export function createRouter({ name, version, protocolVersion, instructions, too
   };
 }
 
-/** Serves newline-delimited JSON-RPC from `input` to `output` until `input` ends. */
+/** Serves newline-delimited JSON-RPC until input ends or output disconnects. */
 export async function runStdio({ input = process.stdin, output = process.stdout, ...options }) {
   const route = createRouter(options);
   const lines = createInterface({ input, crlfDelay: Infinity });
@@ -59,7 +79,9 @@ export async function runStdio({ input = process.stdin, output = process.stdout,
   let queue = Promise.resolve();
   let disconnected = false;
   const disconnect = () => {
+    if (disconnected) return;
     disconnected = true;
+    lines.close();
     for (const active of pending.values()) active.controller.abort(new Error("MCP output disconnected"));
   };
   output.on("close", disconnect);
@@ -80,19 +102,20 @@ export async function runStdio({ input = process.stdin, output = process.stdout,
   };
   const enqueue = (callback) => { queue = queue.then(callback); };
   for await (const line of lines) {
+    if (disconnected) break;
     if (!line.trim()) continue;
     let request;
     try { request = JSON.parse(line); }
     catch { enqueue(() => send({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "parse error" } })); continue; }
-    if (!isPlainObject(request) || request.jsonrpc !== "2.0" || typeof request.method !== "string" || !request.method ||
-      (Object.hasOwn(request, "id") && request.id !== null && typeof request.id !== "string" && typeof request.id !== "number")) {
-      enqueue(() => send({ jsonrpc: "2.0", id: null, error: { code: -32600, message: "invalid request" } }));
+    if (!isObject(request) || request.jsonrpc !== "2.0" || typeof request.method !== "string" || !request.method ||
+      (Object.hasOwn(request, "id") && !isRequestId(request.id))) {
+      enqueue(() => send(invalidRequest()));
       continue;
     }
     if (!Object.hasOwn(request, "id")) {
       if (request.method === "notifications/cancelled") {
         const id = request.params?.requestId;
-        const active = (typeof id === "string" || typeof id === "number") ? pending.get(id) : undefined;
+        const active = isRequestId(id) ? pending.get(id) : undefined;
         if (active && active.method !== "initialize") active.controller.abort(new Error("MCP request cancelled"));
       }
       continue;

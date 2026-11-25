@@ -6,6 +6,7 @@ Versions come from git tags; a pull request adds its lines under Unreleased and 
 
 - CI dispatches `server-merged` to cartoon-pipeline and `core-released` to character-animator-mcp, alongside the existing consumers.
 - The reusable `pin-consumers` workflow moves a consumer's server pins to main, checks the pinned consumer and merges the pin; CI calls it in place of the `server-merged` dispatch.
+- The Node stdio server validates tool arguments, results, and request IDs and stops reading on output disconnect.
 
 ## 0.1.8 - 2026-11-19
 
