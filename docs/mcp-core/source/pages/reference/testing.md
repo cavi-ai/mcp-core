@@ -16,7 +16,7 @@ The CI protocol gate runs MCP Eval against a representative stdio server using C
 contracts:
 
 ```sh
-npm install --no-audit --no-fund --package-lock=false
+npm ci
 npm run eval:protocol
 ```
 
