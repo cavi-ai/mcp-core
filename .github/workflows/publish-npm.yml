@@ -1,0 +1,65 @@
+name: Publish npm package
+
+on:
+  push:
+    tags:
+      - "node-v*"
+
+permissions: {}
+
+concurrency:
+  group: publish-npm-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      # npm exchanges this OIDC token for a short-lived publish credential; no npm token is stored.
+      id-token: write
+    defaults:
+      run:
+        working-directory: packages/node
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Node 26.13.0 bundles npm 11.20.0; trusted publishing needs npm 11.5.1 or newer.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26.13.0
+          registry-url: https://registry.npmjs.org
+
+      - name: Resolve release version
+        id: release
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="$(node -p 'require("./package.json").version')"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Could not resolve a stable package.json version"
+            exit 1
+          fi
+          if [[ "$TAG" != "node-v$version" ]]; then
+            echo "::error::Expected tag node-v$version (packages/node/package.json version), got $TAG"
+            exit 1
+          fi
+          if npm view "@cavi-ai/mcp-core@$version" version > /dev/null 2>&1; then
+            echo "::notice::@cavi-ai/mcp-core@$version is already published"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Test package
+        if: steps.release.outputs.publish == 'true'
+        run: npm test
+
+      # The trusted publisher for @cavi-ai/mcp-core on npmjs.com names this repository and the
+      # workflow filename publish-npm.yml; renaming this file stops publishing until it is updated.
+      - name: Publish
+        if: steps.release.outputs.publish == 'true'
+        run: npm publish --access public --provenance

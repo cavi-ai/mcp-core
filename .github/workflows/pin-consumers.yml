@@ -8,6 +8,10 @@ on:
         description: JSON list of consumer repositories under cavi-ai.
         required: true
         type: string
+      core_sha:
+        description: The core commit checked by the caller's CI jobs.
+        required: true
+        type: string
     secrets:
       token:
         description: "Fine-grained token: contents read on the server repos; contents and pull requests write on the consumers."
@@ -28,55 +32,36 @@ jobs:
       group: pin-${{ matrix.consumer }}
       cancel-in-progress: false
     env:
-      GH_TOKEN: ${{ secrets.token }}
       CONSUMER: ${{ matrix.consumer }}
     steps:
       - name: Require the token
+        env:
+          GH_TOKEN: ${{ secrets.token }}
         run: test -n "$GH_TOKEN" || { echo "::error::Pass the consumer token as the token secret"; exit 1; }
       - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        if: matrix.consumer == 'game-art-pipeline'
         with:
           python-version: "3.15"
-      # Consumer output stays out of the caller's logs.
-      - name: Check out the consumer
+      - name: Check out the game art consumer and its private submodules
+        if: matrix.consumer == 'game-art-pipeline'
+        env:
+          GH_TOKEN: ${{ secrets.token }}
         run: |
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/cavi-ai/".insteadOf "https://github.com/cavi-ai/"
           git clone -q --recurse-submodules "https://github.com/cavi-ai/$CONSUMER" consumer > /dev/null 2>&1
-      - id: sync
-        name: Move the pins
+      - id: sync_submodules
+        name: Move the game art pins
+        if: matrix.consumer == 'game-art-pipeline'
         working-directory: consumer
         run: |
           set -euo pipefail
-          body="$RUNNER_TEMP/pin-body.md"
-          case "$CONSUMER" in
-            game-art-pipeline)
-              python3 scripts/servers.py sync > "$RUNNER_TEMP/sync.json" 2> /dev/null
-              python3 -c 'import json, sys; sys.exit(0 if json.load(open(sys.argv[1]))["changed"] else 1)' "$RUNNER_TEMP/sync.json" || exit 0
-              key=$(git submodule status | awk '{gsub(/^[-+U]/, "", $1); print substr($1, 1, 7)}' | paste -sd- -)
-              python3 -c 'import json, sys; m = json.load(open(sys.argv[1]))["moved"]; print("\n".join("- %s %s -> %s" % (r, (v["from"] or "new")[:7], v["to"][:7]) for r, v in m.items()))' "$RUNNER_TEMP/sync.json" > "$body"
-              ;;
-            cartoon-pipeline)
-              locked() {
-                python3 -c 'import tomllib; names = {"cavi-adobe-mcp", "cavi-mcp-core", "cavi-character-animator-mcp"}; [print(p["name"], p["source"]["git"].rsplit("#", 1)[1]) for p in tomllib.load(open("uv.lock", "rb"))["package"] if p["name"] in names and "git" in p["source"]]'
-              }
-              locked > "$RUNNER_TEMP/before.txt"
-              uv lock --upgrade-package cavi-adobe-mcp --upgrade-package cavi-mcp-core --upgrade-package cavi-character-animator-mcp > /dev/null 2>&1
-              locked > "$RUNNER_TEMP/after.txt"
-              git diff --quiet uv.lock && exit 0
-              key=$(sha256sum uv.lock | cut -c1-12)
-              python3 -c 'import sys; a = dict(l.split() for l in open(sys.argv[1])); b = dict(l.split() for l in open(sys.argv[2])); print("\n".join("- %s %s -> %s" % (n, (a.get(n) or "new")[:7], v[:7]) for n, v in b.items() if a.get(n) != v))' "$RUNNER_TEMP/before.txt" "$RUNNER_TEMP/after.txt" > "$body"
-              ;;
-            *)
-              echo "::error::No pin steps for this consumer"; exit 1
-              ;;
-          esac
+          python3 scripts/servers.py sync > "$RUNNER_TEMP/sync.json" 2> /dev/null
+          python3 -c 'import json, sys; sys.exit(0 if json.load(open(sys.argv[1]))["changed"] else 1)' "$RUNNER_TEMP/sync.json" || exit 0
+          key=$(git submodule status | awk '{gsub(/^[-+U]/, "", $1); print substr($1, 1, 7)}' | paste -sd- -)
+          python3 -c 'import json, sys; m = json.load(open(sys.argv[1]))["moved"]; print("\n".join("- %s %s -> %s" % (r, (v["from"] or "new")[:7], v["to"][:7]) for r, v in m.items()))' "$RUNNER_TEMP/sync.json" > "$RUNNER_TEMP/pin-body.md"
           echo "branch=bot/pin-servers-$key" >> "$GITHUB_OUTPUT"
-      - name: Install FFmpeg
-        if: steps.sync.outputs.branch && matrix.consumer == 'cartoon-pipeline'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
-      - name: Check the pinned consumer
-        if: steps.sync.outputs.branch
+      - name: Check the pinned game art consumer
+        if: steps.sync_submodules.outputs.branch
         working-directory: consumer
         run: |
           set -euo pipefail
@@ -84,37 +69,105 @@ jobs:
             "$@" > "$RUNNER_TEMP/check.log" 2>&1 || { tail -n 30 "$RUNNER_TEMP/check.log"; exit 1; }
           }
           check uv sync --locked --dev
-          case "$CONSUMER" in
-            game-art-pipeline)
-              check uv run --locked ruff check scripts tests skills
-              check uv run --locked python -m pytest tests -n auto
-              for suite in skills/blender-unity-assets/scripts skills/unity-hdrp/scripts; do
-                check uv run --locked python -m unittest discover -s "$suite"
-              done
-              ;;
-            cartoon-pipeline)
-              check uv run --locked ruff check scripts tests
-              check uv run --locked python -m unittest discover -s tests
-              ;;
-          esac
-      - name: Propose and merge the pin
-        if: steps.sync.outputs.branch
+          check uv run --locked ruff check scripts tests skills
+          check uv run --locked python -m pytest tests -n auto
+          for suite in skills/blender-unity-assets/scripts skills/unity-hdrp/scripts; do
+            check uv run --locked python -m unittest discover -s "$suite"
+          done
+      - name: Check out the lockfile consumer
+        if: matrix.consumer != 'game-art-pipeline'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: cavi-ai/${{ matrix.consumer }}
+          token: ${{ secrets.token }}
+          persist-credentials: false
+          path: consumer
+      - id: sync_lock
+        name: Resolve and check the consumer lockfile
+        if: matrix.consumer != 'game-art-pipeline'
         working-directory: consumer
         env:
-          BRANCH: ${{ steps.sync.outputs.branch }}
+          CORE_SHA: ${{ inputs.core_sha }}
+        run: |
+          set -euo pipefail
+          case "$CONSUMER" in
+            cavi-creative-marketing) packages=(cavi-mcp-core mlx-agent) ;;
+            cartoon-pipeline) packages=(cavi-mcp-core mlx-agent cavi-adobe-mcp cavi-character-animator-mcp) ;;
+            *) echo "::error::No pin steps for this consumer"; exit 1 ;;
+          esac
+          # Only the copied checkout is mounted. Consumer code cannot write to the publishing checkout or runner commands.
+          scratch=$(mktemp -d "$RUNNER_TEMP/pin-checkout.XXXXXXXX")
+          cp -a . "$scratch"
+          image=ghcr.io/astral-sh/uv:0.13.6-python3.15-trixie@sha256:f68dfb3eaf23a53afb5f74833bdacc0ce586d69f8063c48f9f3ebbe42e048e4a
+          isolated() {
+            docker run --rm --user "$(id -u):$(id -g)" --cap-drop ALL --security-opt no-new-privileges \
+              --mount "type=bind,source=$scratch,target=/consumer" --workdir /consumer --env HOME=/tmp \
+              "$image" "$@" >> "$RUNNER_TEMP/check.log" 2>&1
+          }
+          if ! isolated uv lock "${packages[@]/#/--upgrade-package=}"; then
+            echo "::error::Consumer lock resolution failed"; exit 1
+          fi
+          candidate="$scratch/uv.lock"
+          if [ ! -f "$candidate" ] || [ -L "$candidate" ]; then
+            echo "::error::Consumer lock resolution did not produce a regular lockfile"; exit 1
+          fi
+          verified="$RUNNER_TEMP/verified-uv.lock"
+          cp "$candidate" "$verified"
+          locked() {
+            python3 -I -c 'import sys, tomllib; names = set(sys.argv[2:]); [print(p["name"], p["source"]["git"].rsplit("#", 1)[1]) for p in tomllib.load(open(sys.argv[1], "rb"))["package"] if p["name"] in names and "git" in p["source"]]' "$1" "${packages[@]}"
+          }
+          locked "$verified" > "$RUNNER_TEMP/after.txt"
+          resolved=$(awk '$1 == "cavi-mcp-core" { print $2 }' "$RUNNER_TEMP/after.txt")
+          if [ "$resolved" != "$CORE_SHA" ]; then
+            echo "::notice::Resolved core differs from this CI revision. Skipping the pin."
+            exit 0
+          fi
+          cmp -s uv.lock "$verified" && exit 0
+          image=$(docker build --quiet --build-arg "BASE_IMAGE=$image" - <<'DOCKERFILE'
+          ARG BASE_IMAGE
+          FROM ${BASE_IMAGE}
+          RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
+              && rm -rf /var/lib/apt/lists/*
+          DOCKERFILE
+          )
+          if ! isolated bash -euc 'uv sync --locked --dev && uv run --locked ruff check scripts tests && uv run --locked python -m unittest discover -s tests'; then
+            echo "::error::Pinned consumer checks failed"; exit 1
+          fi
+          if [ ! -f "$candidate" ] || [ -L "$candidate" ] || ! cmp -s "$candidate" "$verified"; then
+            echo "::error::The consumer checks changed the resolved lockfile"; exit 1
+          fi
+          locked uv.lock > "$RUNNER_TEMP/before.txt"
+          python3 -I -c 'import sys; a = dict(l.split() for l in open(sys.argv[1])); b = dict(l.split() for l in open(sys.argv[2])); print("\n".join("- %s %s -> %s" % (n, (a.get(n) or "new")[:7], v[:7]) for n, v in b.items() if a.get(n) != v))' "$RUNNER_TEMP/before.txt" "$RUNNER_TEMP/after.txt" > "$RUNNER_TEMP/pin-body.md"
+          cp "$verified" uv.lock
+          key=$({ git rev-parse HEAD; sha256sum uv.lock; } | sha256sum | cut -c1-12)
+          echo "branch=bot/pin-servers-$key" >> "$GITHUB_OUTPUT"
+      - name: Propose and merge the pin
+        if: steps.sync_submodules.outputs.branch || steps.sync_lock.outputs.branch
+        working-directory: consumer
+        env:
+          BRANCH: ${{ steps.sync_submodules.outputs.branch || steps.sync_lock.outputs.branch }}
+          GH_TOKEN: ${{ secrets.token }}
         run: |
           set -euo pipefail
           case "$CONSUMER" in
             game-art-pipeline) paths=(.gitmodules pyproject.toml uv.lock servers plugin.json .claude-plugin .codex-plugin) ;;
-            cartoon-pipeline) paths=(uv.lock) ;;
+            cartoon-pipeline|cavi-creative-marketing) paths=(uv.lock) ;;
           esac
-          if ! git ls-remote --exit-code origin "refs/heads/$BRANCH" > /dev/null 2>&1; then
+          gh auth setup-git --hostname github.com
+          git add -A -- "${paths[@]}"
+          head=$(git ls-remote origin "refs/heads/$BRANCH" | cut -f1)
+          if [ -z "$head" ]; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git switch -q -c "$BRANCH"
-            git add -A -- "${paths[@]}"
             git commit -q -m "chore: pin servers to main"
+            head=$(git rev-parse HEAD)
             git push -q origin "$BRANCH" > /dev/null 2>&1
+          elif [ "$CONSUMER" != game-art-pipeline ]; then
+            git fetch -q --no-tags origin "refs/heads/$BRANCH"
+            test "$(git rev-parse FETCH_HEAD)" = "$head"
+            test "$(git rev-parse FETCH_HEAD^)" = "$(git rev-parse HEAD)"
+            git diff --cached --quiet FETCH_HEAD
           fi
           if [ -z "$(gh pr list --head "$BRANCH" --state all --json number -q '.[0].number')" ]; then
             for old in $(gh pr list --state open --json number,headRefName -q '.[] | select(.headRefName | startswith("bot/pin-servers-")) | .number'); do
@@ -123,5 +176,5 @@ jobs:
             gh pr create --head "$BRANCH" --title "chore: pin servers to main" --body-file "$RUNNER_TEMP/pin-body.md" > /dev/null
           fi
           if [ -n "$(gh pr list --head "$BRANCH" --state open --json number -q '.[0].number')" ]; then
-            gh pr merge "$BRANCH" --squash > /dev/null
+            gh pr merge "$BRANCH" --squash --match-head-commit "$head" > /dev/null
           fi
