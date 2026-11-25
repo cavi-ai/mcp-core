@@ -54,12 +54,16 @@ jobs:
               key=$(git submodule status | awk '{gsub(/^[-+U]/, "", $1); print substr($1, 1, 7)}' | paste -sd- -)
               python3 -c 'import json, sys; m = json.load(open(sys.argv[1]))["moved"]; print("\n".join("- %s %s -> %s" % (r, (v["from"] or "new")[:7], v["to"][:7]) for r, v in m.items()))' "$RUNNER_TEMP/sync.json" > "$body"
               ;;
-            cartoon-pipeline)
+            cartoon-pipeline|cavi-creative-marketing)
+              packages=(cavi-mcp-core mlx-agent)
+              if [ "$CONSUMER" = cartoon-pipeline ]; then
+                packages+=(cavi-adobe-mcp cavi-character-animator-mcp)
+              fi
               locked() {
-                python3 -c 'import tomllib; names = {"cavi-adobe-mcp", "cavi-mcp-core", "cavi-character-animator-mcp"}; [print(p["name"], p["source"]["git"].rsplit("#", 1)[1]) for p in tomllib.load(open("uv.lock", "rb"))["package"] if p["name"] in names and "git" in p["source"]]'
+                python3 -c 'import sys, tomllib; names = set(sys.argv[1:]); [print(p["name"], p["source"]["git"].rsplit("#", 1)[1]) for p in tomllib.load(open("uv.lock", "rb"))["package"] if p["name"] in names and "git" in p["source"]]' "${packages[@]}"
               }
               locked > "$RUNNER_TEMP/before.txt"
-              uv lock --upgrade-package cavi-adobe-mcp --upgrade-package cavi-mcp-core --upgrade-package cavi-character-animator-mcp > /dev/null 2>&1
+              uv lock "${packages[@]/#/--upgrade-package=}" > /dev/null 2>&1
               locked > "$RUNNER_TEMP/after.txt"
               git diff --quiet uv.lock && exit 0
               key=$(sha256sum uv.lock | cut -c1-12)
@@ -87,7 +91,7 @@ jobs:
                 check uv run --locked python -m unittest discover -s "$suite"
               done
               ;;
-            cartoon-pipeline)
+            cartoon-pipeline|cavi-creative-marketing)
               check uv run --locked ruff check scripts tests
               check uv run --locked python -m unittest discover -s tests
               ;;
@@ -101,7 +105,7 @@ jobs:
           set -euo pipefail
           case "$CONSUMER" in
             game-art-pipeline) paths=(.gitmodules pyproject.toml uv.lock servers plugin.json .claude-plugin .codex-plugin) ;;
-            cartoon-pipeline) paths=(uv.lock) ;;
+            cartoon-pipeline|cavi-creative-marketing) paths=(uv.lock) ;;
           esac
           if ! git ls-remote --exit-code origin "refs/heads/$BRANCH" > /dev/null 2>&1; then
             git config user.name "github-actions[bot]"

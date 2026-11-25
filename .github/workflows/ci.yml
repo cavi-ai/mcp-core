@@ -110,11 +110,11 @@ jobs:
           if-no-files-found: error
 
   pin-consumers:
-    # A green main moves the server pins in game-art-pipeline and cartoon-pipeline, checks each and merges the pin.
-    needs: [lint, unit, evals]
+    # A green main moves the server pins in each consumer, checks each and merges the pin.
+    needs: [lint, unit, node, evals]
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     uses: ./.github/workflows/pin-consumers.yml
     with:
-      consumers: '["game-art-pipeline", "cartoon-pipeline"]'
+      consumers: '["game-art-pipeline", "cartoon-pipeline", "cavi-creative-marketing"]'
     secrets:
       token: ${{ secrets.CONSUMER_DISPATCH_TOKEN }}
