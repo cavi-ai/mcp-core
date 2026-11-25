@@ -43,6 +43,38 @@ From a checkout, `uv run --locked python examples/inspect_status.py` starts the 
 stdio, calls `status` and prints `{"ready": true}`. The
 [quickstart](docs/mcp-core/source/pages/introduction/quickstart.md) walks through it.
 
+## Node
+
+`@cavi-ai/mcp-core` in `packages/node` is the stdio MCP server layer for Node tool servers: request validation, `initialize`, `ping`, `tools/list` and `tools/call` routing, JSON-RPC errors, request cancellation and ordered replies. It has no runtime dependencies and shares the Python core's annotations and failure result (`tests/fixtures/failure-result.json`).
+
+```sh
+npm install @cavi-ai/mcp-core
+```
+
+Requires Node 26 or later.
+
+```js
+import { READ_ONLY, runStdio } from "@cavi-ai/mcp-core";
+
+const status = {
+  name: "status",
+  description: "Report readiness.",
+  inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  annotations: READ_ONLY,
+  handler: async (args, { signal }) => ({ ready: true }),
+};
+
+await runStdio({
+  name: "status-example",
+  version: "0.1.0",
+  protocolVersion: "2025-06-18",
+  instructions: "Read readiness.",
+  tools: [status],
+});
+```
+
+A handler that throws `OperationRejected` or `OperationUnknown` returns the structured failure. Any other error is a defect: the caller gets a generic message and the details go to stderr. `createRouter` exposes the same routing for one request at a time.
+
 ## Shared foundations
 
 - Give tool callers consistent typed results and structured failures.

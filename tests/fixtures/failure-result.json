@@ -1,0 +1,82 @@
+[
+  {
+    "kind": "rejected",
+    "code": null,
+    "operation": "status",
+    "message": "count must be positive",
+    "result": {
+      "isError": true,
+      "content": [{"type": "text", "text": "count must be positive"}],
+      "structuredContent": {
+        "error": {
+          "version": 1,
+          "code": "INVALID_ARGUMENT",
+          "operation": "status",
+          "outcome": "rejected",
+          "retry_safe": false,
+          "next_action": "inspect_inputs"
+        }
+      }
+    }
+  },
+  {
+    "kind": "rejected",
+    "code": "PROJECT_LOCKED",
+    "operation": "save",
+    "message": "project is locked",
+    "result": {
+      "isError": true,
+      "content": [{"type": "text", "text": "project is locked"}],
+      "structuredContent": {
+        "error": {
+          "version": 1,
+          "code": "PROJECT_LOCKED",
+          "operation": "save",
+          "outcome": "rejected",
+          "retry_safe": false,
+          "next_action": "inspect_inputs"
+        }
+      }
+    }
+  },
+  {
+    "kind": "unknown",
+    "code": null,
+    "operation": "render",
+    "message": "application timed out",
+    "result": {
+      "isError": true,
+      "content": [{"type": "text", "text": "application timed out"}],
+      "structuredContent": {
+        "error": {
+          "version": 1,
+          "code": "OUTCOME_UNKNOWN",
+          "operation": "render",
+          "outcome": "unknown",
+          "retry_safe": false,
+          "next_action": "inspect_application_and_outputs"
+        }
+      }
+    }
+  },
+  {
+    "kind": "unknown",
+    "code": "APP_EXITED",
+    "operation": "render",
+    "message": "application exited",
+    "result": {
+      "isError": true,
+      "content": [{"type": "text", "text": "application exited"}],
+      "structuredContent": {
+        "error": {
+          "version": 1,
+          "code": "APP_EXITED",
+          "operation": "render",
+          "outcome": "unknown",
+          "retry_safe": false,
+          "next_action": "inspect_application_and_outputs"
+        }
+      }
+    }
+  }
+]
