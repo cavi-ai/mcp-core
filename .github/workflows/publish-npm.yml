@@ -56,7 +56,9 @@ jobs:
 
       - name: Test package
         if: steps.release.outputs.publish == 'true'
-        run: npm test
+        run: |
+          npm ci
+          npm test
 
       # The trusted publisher for @cavi-ai/mcp-core on npmjs.com names this repository and the
       # workflow filename publish-npm.yml; renaming this file stops publishing until it is updated.

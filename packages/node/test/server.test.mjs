@@ -59,13 +59,31 @@ test("tools/call rejects arguments that violate the published schema before disp
   assert.deepEqual(received, [valid]);
 });
 
-test("router rejects unsupported schema assertions at registration", () => {
+test("tools/call enforces the JSON Schema constraints a server publishes", async () => {
   const inputSchema = {
     type: "object",
-    properties: { path: { $ref: "#/$defs/path" } },
-    $defs: { path: { type: "string" } },
+    properties: {
+      after: { type: "array", items: { type: "array", minItems: 2, maxItems: 2, items: { type: "string" } } },
+      timeout: { type: "integer", minimum: 1000, maximum: 180000 },
+      clipId: { type: "string", pattern: "^clip-[0-9]+$" },
+      path: { $ref: "#/$defs/path" },
+    },
+    $defs: { path: { type: "string", minLength: 1 } },
+    additionalProperties: false,
   };
-  assert.throws(() => createRouter(options([{ ...echo, inputSchema }])), TypeError);
+  const route = createRouter(options([{ ...echo, inputSchema, handler: () => ({}) }]));
+  for (const args of [{ after: [["setup"]] }, { timeout: 999 }, { clipId: "clip" }, { path: "" }]) {
+    const { error } = await route(call(1, echo.name, args));
+    assert.equal(error?.code, -32602);
+    assert.match(error.message, /^arguments do not match echo inputSchema: data\//);
+  }
+  const valid = { after: [["setup", "mix"]], timeout: 1000, clipId: "clip-1", path: "set.als" };
+  assert.deepEqual((await route(call(2, echo.name, valid))).result.structuredContent, {});
+});
+
+test("router rejects an unknown schema keyword at registration", () => {
+  const inputSchema = { type: "object", properties: { count: { type: "integer", minimun: 1 } } };
+  assert.throws(() => createRouter(options([{ ...echo, inputSchema }])), /echo\.inputSchema: strict mode: unknown keyword: "minimun"/);
 });
 
 test("tools without an output schema return text for non-object results", async () => {
@@ -136,6 +154,18 @@ test("stdio rejects malformed input with -32700 and -32600", async () => {
   const replies = await server.finish();
   assert.deepEqual(replies.map((reply) => reply.error?.code), [-32700, -32600, -32600, -32600, -32600, -32600]);
   assert.ok(replies.every((reply) => reply.id === null));
+});
+
+test("stdio serves a caller-built route with the request signal", async () => {
+  const signals = [];
+  const route = async (message, { signal }) => {
+    signals.push(signal instanceof AbortSignal);
+    return { jsonrpc: "2.0", id: message.id, result: { resources: [] } };
+  };
+  const server = connect(runStdio, { route });
+  server.send(request(1, "resources/list"));
+  assert.deepEqual(await server.finish(), [{ jsonrpc: "2.0", id: 1, result: { resources: [] } }]);
+  assert.deepEqual(signals, [true]);
 });
 
 test("stdio answers requests in order and ignores other notifications", async () => {
