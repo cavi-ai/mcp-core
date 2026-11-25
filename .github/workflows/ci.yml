@@ -112,9 +112,10 @@ jobs:
   pin-consumers:
     # A green main moves the server pins in each consumer, checks each and merges the pin.
     needs: [lint, unit, node, evals]
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     uses: ./.github/workflows/pin-consumers.yml
     with:
       consumers: '["game-art-pipeline", "cartoon-pipeline", "cavi-creative-marketing"]'
+      core_sha: ${{ github.sha }}
     secrets:
       token: ${{ secrets.CONSUMER_DISPATCH_TOKEN }}
