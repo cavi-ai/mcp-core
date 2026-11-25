@@ -70,6 +70,11 @@ jobs:
               ;;
           esac
           echo "branch=bot/pin-servers-$key" >> "$GITHUB_OUTPUT"
+      - name: Install FFmpeg
+        if: steps.sync.outputs.branch && matrix.consumer == 'cartoon-pipeline'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
       - name: Check the pinned consumer
         if: steps.sync.outputs.branch
         working-directory: consumer
