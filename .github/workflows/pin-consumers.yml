@@ -84,17 +84,23 @@ jobs:
           path: consumer
       - id: sync_lock
         name: Resolve and check the consumer lockfile
-        if: matrix.consumer != 'game-art-pipeline'
+        if: matrix.consumer != 'game-art-pipeline' && matrix.consumer != 'ableton-mcp'
         working-directory: consumer
         env:
           CORE_SHA: ${{ inputs.core_sha }}
         run: |
           set -euo pipefail
+          lint=(scripts tests)
           case "$CONSUMER" in
             cavi-creative-marketing) packages=(cavi-mcp-core mlx-agent) ;;
             cartoon-pipeline) packages=(cavi-mcp-core mlx-agent cavi-adobe-mcp cavi-character-animator-mcp) ;;
+            pipeline) packages=(cavi-mcp-core); lint=(.) ;;
             *) echo "::error::No pin steps for this consumer"; exit 1 ;;
           esac
+          if [ ! -f uv.lock ]; then
+            echo "::notice::The consumer has no uv.lock on main. Skipping the pin."
+            exit 0
+          fi
           # Only the copied checkout is mounted. Consumer code cannot write to the publishing checkout or runner commands.
           scratch=$(mktemp -d "$RUNNER_TEMP/pin-checkout.XXXXXXXX")
           cp -a . "$scratch"
@@ -130,7 +136,7 @@ jobs:
               && rm -rf /var/lib/apt/lists/*
           DOCKERFILE
           )
-          if ! isolated bash -euc 'uv sync --locked --dev && uv run --locked ruff check scripts tests && uv run --locked python -m unittest discover -s tests'; then
+          if ! isolated bash -euc 'uv sync --locked --dev && uv run --locked ruff check "$@" && uv run --locked python -m unittest discover -s tests' checks "${lint[@]}"; then
             echo "::error::Pinned consumer checks failed"; exit 1
           fi
           if [ ! -f "$candidate" ] || [ -L "$candidate" ] || ! cmp -s "$candidate" "$verified"; then
@@ -141,17 +147,79 @@ jobs:
           cp "$verified" uv.lock
           key=$({ git rev-parse HEAD; sha256sum uv.lock; } | sha256sum | cut -c1-12)
           echo "branch=bot/pin-servers-$key" >> "$GITHUB_OUTPUT"
-      - name: Propose and merge the pin
-        if: steps.sync_submodules.outputs.branch || steps.sync_lock.outputs.branch
+      - id: sync_npm
+        name: Resolve and check the npm consumer lockfile
+        if: matrix.consumer == 'ableton-mcp'
         working-directory: consumer
         env:
-          BRANCH: ${{ steps.sync_submodules.outputs.branch || steps.sync_lock.outputs.branch }}
+          CORE_SHA: ${{ inputs.core_sha }}
+        run: |
+          set -euo pipefail
+          if ! jq -e '.dependencies["@cavi-ai/mcp-core"]' package.json > /dev/null; then
+            echo "::notice::The consumer does not depend on @cavi-ai/mcp-core on main. Skipping the pin."
+            exit 0
+          fi
+          # Only the copied checkout is mounted. Consumer code cannot write to the publishing checkout or runner commands.
+          scratch=$(mktemp -d "$RUNNER_TEMP/pin-checkout.XXXXXXXX")
+          cp -a . "$scratch"
+          # The full image carries git, which npm needs to resolve a git dependency.
+          image=node:26.13.0-trixie@sha256:438603bbb5cda404b9416f0b5c8026f61501ab911760d861ec28c36b5d675725
+          isolated() {
+            docker run --rm --user "$(id -u):$(id -g)" --cap-drop ALL --security-opt no-new-privileges \
+              --mount "type=bind,source=$scratch,target=/consumer" --workdir /consumer --env HOME=/tmp \
+              "$image" "$@" >> "$RUNNER_TEMP/check.log" 2>&1
+          }
+          if ! isolated npm install --ignore-scripts --no-audit --no-fund "github:cavi-ai/mcp-core#main"; then
+            echo "::error::Consumer lock resolution failed"; exit 1
+          fi
+          candidate="$scratch/package-lock.json"
+          if [ ! -f "$candidate" ] || [ -L "$candidate" ]; then
+            echo "::error::Consumer lock resolution did not produce a regular lockfile"; exit 1
+          fi
+          if ! cmp -s package.json "$scratch/package.json"; then
+            echo "::error::Consumer lock resolution changed package.json"; exit 1
+          fi
+          verified="$RUNNER_TEMP/verified-package-lock.json"
+          cp "$candidate" "$verified"
+          locked() {
+            jq -r '.packages["node_modules/@cavi-ai/mcp-core"].resolved // "" | split("#") | last' "$1"
+          }
+          resolved=$(locked "$verified")
+          if [ "$resolved" != "$CORE_SHA" ]; then
+            echo "::notice::Resolved core differs from this CI revision. Skipping the pin."
+            exit 0
+          fi
+          cmp -s package-lock.json "$verified" && exit 0
+          image=$(docker build --quiet --build-arg "BASE_IMAGE=$image" - <<'DOCKERFILE'
+          ARG BASE_IMAGE
+          FROM ${BASE_IMAGE}
+          RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
+              && rm -rf /var/lib/apt/lists/*
+          DOCKERFILE
+          )
+          if ! isolated bash -euc 'npm ci --ignore-scripts --no-audit --no-fund && npm run test:mcp'; then
+            echo "::error::Pinned consumer checks failed"; exit 1
+          fi
+          if [ ! -f "$candidate" ] || [ -L "$candidate" ] || ! cmp -s "$candidate" "$verified"; then
+            echo "::error::The consumer checks changed the resolved lockfile"; exit 1
+          fi
+          before=$(locked package-lock.json)
+          echo "- @cavi-ai/mcp-core ${before:0:7} -> ${resolved:0:7}" > "$RUNNER_TEMP/pin-body.md"
+          cp "$verified" package-lock.json
+          key=$({ git rev-parse HEAD; sha256sum package-lock.json; } | sha256sum | cut -c1-12)
+          echo "branch=bot/pin-servers-$key" >> "$GITHUB_OUTPUT"
+      - name: Propose and merge the pin
+        if: steps.sync_submodules.outputs.branch || steps.sync_lock.outputs.branch || steps.sync_npm.outputs.branch
+        working-directory: consumer
+        env:
+          BRANCH: ${{ steps.sync_submodules.outputs.branch || steps.sync_lock.outputs.branch || steps.sync_npm.outputs.branch }}
           GH_TOKEN: ${{ secrets.token }}
         run: |
           set -euo pipefail
           case "$CONSUMER" in
             game-art-pipeline) paths=(.gitmodules pyproject.toml uv.lock servers plugin.json .claude-plugin .codex-plugin) ;;
-            cartoon-pipeline|cavi-creative-marketing) paths=(uv.lock) ;;
+            cartoon-pipeline|cavi-creative-marketing|pipeline) paths=(uv.lock) ;;
+            ableton-mcp) paths=(package-lock.json) ;;
           esac
           gh auth setup-git --hostname github.com
           git add -A -- "${paths[@]}"

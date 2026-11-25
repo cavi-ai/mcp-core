@@ -1,9 +1,28 @@
 {
-  "name": "cavi-mcp-core-evals",
-  "private": true,
+  "name": "@cavi-ai/mcp-core",
+  "version": "0.1.0",
+  "description": "Stdio MCP server layer shared by CAVI Node tool servers.",
   "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./packages/node/src/index.mjs"
+  },
+  "files": [
+    "packages/node/src"
+  ],
+  "engines": {
+    "node": ">=26"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cavi-ai/mcp-core.git"
+  },
   "scripts": {
+    "test": "node --test \"packages/node/test/*.test.mjs\"",
     "eval:protocol": "uv run --locked python evals/run.py"
+  },
+  "dependencies": {
+    "ajv": "8.20.0"
   },
   "devDependencies": {
     "@cavi-ai/mcp-eval": "github:cavi-ai/mcp-eval#main"

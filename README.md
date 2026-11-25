@@ -48,10 +48,10 @@ stdio, calls `status` and prints `{"ready": true}`. The
 `@cavi-ai/mcp-core` in `packages/node` is the stdio MCP server layer for Node tool servers: request validation, `initialize`, `ping`, `tools/list` and `tools/call` routing, JSON-RPC errors, request cancellation and ordered replies. It shares the Python core's annotations and failure result (`tests/fixtures/failure-result.json`).
 
 ```sh
-npm install @cavi-ai/mcp-core
+npm install github:cavi-ai/mcp-core#main
 ```
 
-Requires Node 26 or later.
+Requires Node 26 or later. The repository root is the package; a consumer's lockfile pins the main commit it installed.
 
 ```js
 import { READ_ONLY, runStdio } from "@cavi-ai/mcp-core";

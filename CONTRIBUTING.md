@@ -23,11 +23,13 @@ The documentation tests build and verify `docs/mcp-core/source` and fail when th
 and the package, or the error codes in `reference/results-and-errors.md` and the codes a client
 receives, differ. Change the documentation in the same pull request as the code.
 
-The MCP Eval check needs Node.js and the MCP Eval executable (`npm install`, or `MCPEVAL_EXECUTABLE` set
-to a build of [cavi-ai/mcp-eval](https://github.com/cavi-ai/mcp-eval)):
+The MCP Eval check needs Node.js and the MCP Eval executable (`npm ci`, or `MCPEVAL_EXECUTABLE` set
+to a build of [cavi-ai/mcp-eval](https://github.com/cavi-ai/mcp-eval)). `npm test` runs the Node
+package tests:
 
 ```bash
-npm install --no-audit --no-fund --package-lock=false
+npm ci
+npm test
 npm run eval:protocol
 ```
 
