@@ -1,4 +1,6 @@
+import json
 import unittest
+from pathlib import Path
 
 from mcp.server.mcpserver.exceptions import ToolError, UnexpectedToolError
 from pydantic import Field, ValidationError
@@ -68,6 +70,22 @@ class FailureTests(unittest.TestCase):
         rejected = self.error("apply", wrapped(ValueError("bad")),
                               unknown_next_action="inspect_transaction")
         self.assertEqual(rejected["next_action"], "inspect_inputs")
+
+
+class SharedFailureFixtureTests(unittest.TestCase):
+    def test_failure_matches_the_fixture_shared_with_the_node_core(self):
+        path = Path(__file__).parent / "fixtures" / "failure-result.json"
+        cases = json.loads(path.read_text())
+        self.assertTrue(cases)
+        for case in cases:
+            with self.subTest(code=case["code"], kind=case["kind"]):
+                kind = OperationRejected if case["kind"] == "rejected" else OperationUnknown
+                args = (case["message"],) if case["code"] is None else (case["message"],
+                                                                        case["code"])
+                result = failure(case["operation"], wrapped(kind(*args)))
+                wire = result.model_dump(by_alias=True, exclude_none=True)
+                wire.pop("resultType", None)  # the SDK's default marker, not part of the contract
+                self.assertEqual(wire, case["result"])
 
 
 class ResultTests(unittest.TestCase):
