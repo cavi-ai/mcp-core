@@ -91,7 +91,7 @@ jobs:
         run: |
           set -euo pipefail
           case "$CONSUMER" in
-            cavi-creative-marketing) packages=(cavi-mcp-core mlx-agent) ;;
+            cavi-creative-marketing) packages=(cavi-mcp-core mlx-agent cavi-pipeline) ;;
             cartoon-pipeline) packages=(cavi-mcp-core mlx-agent cavi-adobe-mcp cavi-character-animator-mcp) ;;
             *) echo "::error::No pin steps for this consumer"; exit 1 ;;
           esac
